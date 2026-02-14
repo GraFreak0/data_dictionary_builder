@@ -1,0 +1,30 @@
+# Core dependencies
+PyYAML>=6.0.1
+python-dotenv>=1.0.0
+
+# Database connectors
+psycopg2-binary>=2.9.9  # PostgreSQL
+PyMySQL>=1.1.0  # MySQL
+clickhouse-driver>=0.2.6  # ClickHouse
+google-cloud-spanner>=3.40.0  # Google Cloud Spanner
+
+# Email functionality
+secure-smtplib>=0.1.1
+
+# Data validation and modeling
+pydantic>=2.5.0
+
+# Utilities
+typing-extensions>=4.9.0
+
+# Optional: For better datetime handling
+python-dateutil>=2.8.2
+
+# Optional: For enhanced logging
+colorlog>=6.8.0
+
+# Development dependencies (optional)
+pytest>=7.4.3
+black>=23.12.0
+flake8>=6.1.0
+mypy>=1.7.1
