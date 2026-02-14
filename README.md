@@ -14,7 +14,7 @@ A Python library for extracting database metadata and generating dbt-compatible 
 ## Project Structure
 
 ```
-db_metadata_generator/
+data_dictionary_builder/
 ├── README.md
 ├── requirements.txt
 ├── setup.py
@@ -60,7 +60,7 @@ pip install -e .
 ### Basic Usage
 
 ```python
-from db_metadata_generator import MetadataExtractor, YAMLGenerator
+from data_dictionary_builder import MetadataExtractor, YAMLGenerator
 
 # Extract metadata
 extractor = MetadataExtractor(
@@ -82,7 +82,7 @@ generator.generate_yaml_files(metadata)
 ### With Schema Comparison
 
 ```python
-from db_metadata_generator import SchemaComparator
+from data_dictionary_builder import SchemaComparator
 
 comparator = SchemaComparator(
     source_config={...},

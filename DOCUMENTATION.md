@@ -33,8 +33,8 @@ The DB Metadata Generator is a Python library designed to extract database metad
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/db-metadata-generator.git
-cd db-metadata-generator
+git clone https://github.com/yourusername/data-dictionary-builder.git
+cd data-dictionary-builder
 
 # Install dependencies
 pip install -r requirements.txt
@@ -46,7 +46,7 @@ pip install -e .
 ### Using pip (when published)
 
 ```bash
-pip install db-metadata-generator
+pip install data-dictionary-builder
 ```
 
 ## Quick Start
@@ -54,7 +54,7 @@ pip install db-metadata-generator
 ### Basic Metadata Extraction
 
 ```python
-from db_metadata_generator import MetadataExtractor, YAMLGenerator
+from data_dictionary_builder import MetadataExtractor, YAMLGenerator
 
 # Configure database connection
 config = {
@@ -78,7 +78,7 @@ yaml_gen.generate_yaml_files(db_metadata)
 ### Schema Comparison
 
 ```python
-from db_metadata_generator import SchemaComparator
+from data_dictionary_builder import SchemaComparator
 
 comparator = SchemaComparator(
     source_config={'db_type': 'postgres', 'host': 'source-db', ...},
@@ -263,7 +263,7 @@ results = comparator.extract_and_compare_all(
 ### Send Comparison Report
 
 ```python
-from db_metadata_generator import EmailSender
+from data_dictionary_builder import EmailSender
 
 email_sender = EmailSender(
     smtp_host='smtp.gmail.com',
@@ -298,7 +298,7 @@ email_sender.send_email(
 ```python
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from db_metadata_generator import MetadataExtractor, YAMLGenerator
+from data_dictionary_builder import MetadataExtractor, YAMLGenerator
 
 def extract_metadata():
     with MetadataExtractor(**config) as extractor:
@@ -421,8 +421,8 @@ If YAML files are not valid:
 ## Support
 
 For issues, questions, or contributions:
-- GitHub Issues: [Create an issue](https://github.com/yourusername/db-metadata-generator/issues)
-- Documentation: [Read the docs](https://github.com/yourusername/db-metadata-generator)
+- GitHub Issues: [Create an issue](https://github.com/yourusername/data-dictionary-builder/issues)
+- Documentation: [Read the docs](https://github.com/yourusername/data-dictionary-builder)
 - Email: your-email@example.com
 
 ## License

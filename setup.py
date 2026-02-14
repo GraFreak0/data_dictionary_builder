@@ -7,14 +7,14 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
     requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
 
 setup(
-    name="db-metadata-generator",
+    name="data-dictionary-builder",
     version="1.0.0",
-    author="Your Name",
-    author_email="your.email@example.com",
+    author="Isaiah Johnson",
+    author_email="d8aguy@mail.com",
     description="A library for extracting database metadata and generating dbt-compatible YAML files",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/db-metadata-generator",
+    url="https://github.com/yourusername/data-dictionary-builder",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     classifiers=[
@@ -41,7 +41,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "db-metadata-gen=db_metadata_generator.cli:main",
+            "db-metadata-gen=data_dictionary_builder.cli:main",
         ],
     },
 )

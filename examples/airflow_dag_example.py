@@ -15,9 +15,9 @@ from airflow.utils.dates import days_ago
 
 # Import the library modules
 import sys
-sys.path.insert(0, '/path/to/db_metadata_generator/src')
+sys.path.insert(0, '/path/to/data_dictionary_builder/src')
 
-from db_metadata_generator import (
+from data_dictionary_builder import (
     MetadataExtractor,
     YAMLGenerator,
     SchemaComparator,

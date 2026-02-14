@@ -7,7 +7,7 @@ This file demonstrates how to use the library outside of Airflow.
 import sys
 sys.path.insert(0, '../src')
 
-from db_metadata_generator import (
+from data_dictionary_builder import (
     MetadataExtractor,
     YAMLGenerator,
     SchemaComparator,
