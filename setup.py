@@ -14,7 +14,7 @@ setup(
     description="A library for extracting database metadata and generating dbt-compatible YAML files",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/data-dictionary-builder",
+    url="https://github.com/GraFreak0/data_dictionary_builder",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     classifiers=[
@@ -28,6 +28,8 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
     ],
     python_requires=">=3.8",
     install_requires=requirements,
