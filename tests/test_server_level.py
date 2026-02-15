@@ -60,66 +60,66 @@ print("  └── schema_staging.yml")
 # Example 2: Extract from ALL MySQL databases on a server
 # =============================================================================
 
-# print("\n" + "=" * 70)
-# print("Example 2: MySQL - Extract ALL databases on server")
-# print("=" * 70)
+print("\n" + "=" * 70)
+print("Example 2: MySQL - Extract ALL databases on server")
+print("=" * 70)
 
-# mysql_config = {
-#     'db_type': 'mysql',
-#     'host': 'localhost',
-#     'port': 3306,
-#     # 'database': 'app_db',  # ← OMITTED!
-#     'user': 'root',
-#     'password': 'password'
-# }
+mysql_config = {
+    'db_type': 'mysql',
+    'host': 'localhost',
+    'port': 3306,
+    # 'database': 'app_db',  # ← OMITTED!
+    'user': 'root',
+    'password': 'password'
+}
 
-# print("\nExtracting from ALL databases on MySQL server...")
+print("\nExtracting from ALL databases on MySQL server...")
 
-# with MetadataExtractor(**mysql_config) as extractor:
-#     db_metadata = extractor.extract_all_schemas()
+with MetadataExtractor(**mysql_config) as extractor:
+    db_metadata = extractor.extract_all_schemas()
     
-#     print(f"\n✓ Found {len(db_metadata.schemas)} databases on server:")
-#     for schema in db_metadata.schemas:
-#         print(f"  - {schema.name}: {len(schema.tables)} tables")
+    print(f"\n✓ Found {len(db_metadata.schemas)} databases on server:")
+    for schema in db_metadata.schemas:
+        print(f"  - {schema.name}: {len(schema.tables)} tables")
 
-# yaml_gen = YAMLGenerator(output_dir='./dbt_models/all_mysql_dbs')
-# files = yaml_gen.generate_yaml_files(db_metadata)
+yaml_gen = YAMLGenerator(output_dir='./dbt_models/all_mysql_dbs')
+files = yaml_gen.generate_yaml_files(db_metadata)
 
-# print(f"\n✓ Generated {len(files)} YAML files")
+print(f"\n✓ Generated {len(files)} YAML files")
 
-# # =============================================================================
-# # Example 3: Filter specific databases from server
-# # =============================================================================
+# =============================================================================
+# Example 3: Filter specific databases from server
+# =============================================================================
 
-# print("\n" + "=" * 70)
-# print("Example 3: Extract only SPECIFIC databases from server")
-# print("=" * 70)
+print("\n" + "=" * 70)
+print("Example 3: Extract only SPECIFIC databases from server")
+print("=" * 70)
 
-# postgres_config = {
-#     'db_type': 'postgres',
-#     'host': 'localhost',
-#     'port': 5432,
-#     # 'database' omitted - server mode
-#     'user': 'postgres',
-#     'password': 'password'
-# }
+postgres_config = {
+    'db_type': 'postgres',
+    'host': 'localhost',
+    'port': 5432,
+    # 'database' omitted - server mode
+    'user': 'postgres',
+    'password': 'password'
+}
 
-# print("\nExtracting only 'production' and 'analytics' from server...")
+print("\nExtracting only 'production' and 'analytics' from server...")
 
-# with MetadataExtractor(**postgres_config) as extractor:
-#     # Use schema_filter to specify which databases to extract
-#     db_metadata = extractor.extract_all_schemas(
-#         schema_filter=['production', 'analytics']
-#     )
+with MetadataExtractor(**postgres_config) as extractor:
+    # Use schema_filter to specify which databases to extract
+    db_metadata = extractor.extract_all_schemas(
+        schema_filter=['production', 'analytics']
+    )
     
-#     print(f"\n✓ Extracted {len(db_metadata.schemas)} databases:")
-#     for schema in db_metadata.schemas:
-#         print(f"  - {schema.name}: {len(schema.tables)} tables")
+    print(f"\n✓ Extracted {len(db_metadata.schemas)} databases:")
+    for schema in db_metadata.schemas:
+        print(f"  - {schema.name}: {len(schema.tables)} tables")
 
-# yaml_gen = YAMLGenerator(output_dir='./dbt_models/filtered_postgres')
-# files = yaml_gen.generate_yaml_files(db_metadata)
+yaml_gen = YAMLGenerator(output_dir='./dbt_models/filtered_postgres')
+files = yaml_gen.generate_yaml_files(db_metadata)
 
-# print(f"\n✓ Generated {len(files)} YAML files")
+print(f"\n✓ Generated {len(files)} YAML files")
 
 # =============================================================================
 # Example 4: Compare server-mode vs single-database mode

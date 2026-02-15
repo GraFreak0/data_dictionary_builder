@@ -10,22 +10,12 @@ databases = {
         'db_type': 'clickhouse',
         'host': os.getenv('clickhouse_host'),
         'port': int(os.getenv('clickhouse_port', 9440)),
-        'database': os.getenv('clickhouse_db'),
+        # 'database': os.getenv('clickhouse_db'),
         'user': os.getenv('clickhouse_user'),
         'password': os.getenv('clickhouse_password'),
         'secure': True,
         'verify': False,
-    },
-    'clickhouse_system': {
-        'db_type': 'clickhouse',
-        'host': os.getenv('clickhouse_host'),
-        'port': int(os.getenv('clickhouse_port', 9440)),
-        'database': 'system',
-        'user': os.getenv('clickhouse_user'),
-        'password': os.getenv('clickhouse_password'),
-        'secure': True,
-        'verify': False,
-    },
+    }
 }
 
 # Step 2: Extract metadata
@@ -33,7 +23,9 @@ for db_name, config in databases.items():
     print("Extracting metadata...")
     with MetadataExtractor(**config) as extractor:
         # Extract all schemas (or use schema_filter=['public'] for specific ones)
-        db_metadata = extractor.extract_all_schemas()
+        db_metadata = extractor.extract_all_schemas(
+            schema_filter=['default', 'system']
+        )
         
         print(f"✓ Extracted {len(db_metadata.schemas)} schemas")
         for schema in db_metadata.schemas:
