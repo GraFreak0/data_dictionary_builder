@@ -12,32 +12,37 @@ from ..metadata.models import TableMetadata, ColumnMetadata
 class PostgresConnector(BaseConnector):
     """Connector for PostgreSQL databases."""
     
-    def __init__(self, host: str, port: int, database: str, user: str, password: str, **kwargs):
+    def __init__(self, host: str, port: int, database: str = None, user: str = None, password: str = None, **kwargs):
         """
         Initialize PostgreSQL connector.
         
         Args:
             host: Database host
             port: Database port
-            database: Database name
+            database: Database name (optional - if not provided, connects to all databases on server)
             user: Username
             password: Password
             **kwargs: Additional connection parameters
         """
+        # If no database specified, connect to 'postgres' (default database)
+        connect_database = database if database else 'postgres'
+        
         super().__init__(
             host=host,
             port=port,
-            database=database,
+            database=connect_database,
             user=user,
             password=password,
             **kwargs
         )
         self.host = host
         self.port = port
-        self.database = database
+        self.database = database  # Store original (may be None)
+        self.connect_database = connect_database  # For connection
         self.user = user
         self.password = password
         self.db_type = "postgresql"
+        self.server_mode = database is None  # Flag to indicate server-level extraction
     
     def connect(self) -> None:
         """Establish connection to PostgreSQL database."""
@@ -45,7 +50,7 @@ class PostgresConnector(BaseConnector):
             self.connection = psycopg2.connect(
                 host=self.host,
                 port=self.port,
-                database=self.database,
+                database=self.connect_database,
                 user=self.user,
                 password=self.password,
                 **{k: v for k, v in self.connection_params.items() 
@@ -60,23 +65,56 @@ class PostgresConnector(BaseConnector):
             self.connection.close()
             self.connection = None
     
+    def switch_database(self, database_name: str) -> None:
+        """
+        Switch to a different database on the same server.
+        Only works in server mode (PostgreSQL/MySQL).
+        
+        Args:
+            database_name: Name of the database to switch to
+        """
+        if hasattr(self, 'server_mode') and self.server_mode:
+            # Close current connection
+            if self.connection:
+                self.connection.close()
+            
+            # Update database and reconnect
+            self.connect_database = database_name
+            self.connect()
+    
     def get_schemas(self) -> List[str]:
         """
         Get list of all schemas in the database.
+        If in server mode (no database specified), returns schemas from all databases.
         
         Returns:
             List of schema names
         """
-        cursor = self.connection.cursor()
-        cursor.execute("""
-            SELECT schema_name 
-            FROM information_schema.schemata 
-            WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
-            ORDER BY schema_name
-        """)
-        schemas = [row[0] for row in cursor.fetchall()]
-        cursor.close()
-        return schemas
+        if self.server_mode:
+            # Get all databases on the server (excluding system databases)
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT datname 
+                FROM pg_database 
+                WHERE datistemplate = false 
+                AND datname NOT IN ('postgres', 'template0', 'template1')
+                ORDER BY datname
+            """)
+            databases = [row[0] for row in cursor.fetchall()]
+            cursor.close()
+            return databases
+        else:
+            # Get schemas in the specified database
+            cursor = self.connection.cursor()
+            cursor.execute("""
+                SELECT schema_name 
+                FROM information_schema.schemata 
+                WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+                ORDER BY schema_name
+            """)
+            schemas = [row[0] for row in cursor.fetchall()]
+            cursor.close()
+            return schemas
     
     def get_tables(self, schema_name: str) -> List[str]:
         """

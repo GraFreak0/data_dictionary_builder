@@ -67,6 +67,7 @@ class MetadataExtractor:
     def extract_all_schemas(self, schema_filter: Optional[List[str]] = None) -> DatabaseMetadata:
         """
         Extract metadata for all schemas in the database.
+        If database was not specified in config, extracts from all databases on server.
         
         Args:
             schema_filter: Optional list of schema names to extract. If None, extracts all schemas.
@@ -79,37 +80,101 @@ class MetadataExtractor:
         # Get database version
         version = connector.get_database_version()
         
-        # Create database metadata object
-        db_metadata = DatabaseMetadata(
-            database_name=self.connection_params.get('database', 'unknown'),
-            database_type=self.db_type,
-            version=version,
-            host=self.connection_params.get('host'),
-            port=self.connection_params.get('port')
-        )
+        # Check if in server mode
+        server_mode = hasattr(connector, 'server_mode') and connector.server_mode
         
-        # Get all schemas
-        all_schemas = connector.get_schemas()
-        logger.info(f"Found {len(all_schemas)} schemas in database")
+        if server_mode:
+            # Server mode: database parameter was None, extract from all databases
+            logger.info("Server mode: Extracting from all databases on server")
+            
+            db_metadata = DatabaseMetadata(
+                database_name=f"{connector.host}:{connector.port}",
+                database_type=self.db_type,
+                version=version,
+                host=self.connection_params.get('host'),
+                port=self.connection_params.get('port')
+            )
+            
+            # Get all databases
+            all_databases = connector.get_schemas()  # In server mode, this returns databases
+            logger.info(f"Found {len(all_databases)} databases on server")
+            
+            # Filter databases if specified
+            if schema_filter:
+                databases_to_extract = [db for db in all_databases if db in schema_filter]
+                logger.info(f"Filtering to {len(databases_to_extract)} databases: {databases_to_extract}")
+            else:
+                databases_to_extract = all_databases
+            
+            # Extract each database as a "schema"
+            for db_name in databases_to_extract:
+                try:
+                    logger.info(f"Extracting database: {db_name}")
+                    
+                    # Switch to this database
+                    connector.switch_database(db_name)
+                    
+                    # Get actual schemas in this database
+                    actual_schemas = connector.get_schemas()
+                    
+                    # Create a schema metadata for this database
+                    from .models import SchemaMetadata
+                    db_schema = SchemaMetadata(name=db_name)
+                    
+                    # Extract tables from each schema in this database
+                    for schema_name in actual_schemas:
+                        if schema_name in ['pg_catalog', 'information_schema', 'pg_toast']:
+                            continue
+                        
+                        tables = connector.get_tables(schema_name)
+                        for table_name in tables:
+                            table_metadata = connector.get_table_metadata(schema_name, table_name)
+                            # Prefix table name with schema to avoid conflicts
+                            table_metadata.name = f"{schema_name}.{table_name}"
+                            db_schema.add_table(table_metadata)
+                    
+                    db_metadata.add_schema(db_schema)
+                    logger.info(f"Extracted {len(db_schema.tables)} tables from database: {db_name}")
+                    
+                except Exception as e:
+                    logger.error(f"Error extracting database {db_name}: {e}")
+                    continue
+            
+            logger.info(f"Server extraction complete. Total databases: {len(db_metadata.schemas)}")
+            return db_metadata
         
-        # Filter schemas if specified
-        if schema_filter:
-            schemas_to_extract = [s for s in all_schemas if s in schema_filter]
-            logger.info(f"Filtering to {len(schemas_to_extract)} schemas: {schemas_to_extract}")
         else:
-            schemas_to_extract = all_schemas
-        
-        # Extract metadata for each schema
-        for schema_name in schemas_to_extract:
-            try:
-                schema_metadata = self.extract_schema(schema_name)
-                db_metadata.add_schema(schema_metadata)
-            except Exception as e:
-                logger.error(f"Error extracting schema {schema_name}: {e}")
-                continue
-        
-        logger.info(f"Extraction complete. Total schemas: {len(db_metadata.schemas)}")
-        return db_metadata
+            # Normal mode: single database specified
+            db_metadata = DatabaseMetadata(
+                database_name=self.connection_params.get('database', 'unknown'),
+                database_type=self.db_type,
+                version=version,
+                host=self.connection_params.get('host'),
+                port=self.connection_params.get('port')
+            )
+            
+            # Get all schemas
+            all_schemas = connector.get_schemas()
+            logger.info(f"Found {len(all_schemas)} schemas in database")
+            
+            # Filter schemas if specified
+            if schema_filter:
+                schemas_to_extract = [s for s in all_schemas if s in schema_filter]
+                logger.info(f"Filtering to {len(schemas_to_extract)} schemas: {schemas_to_extract}")
+            else:
+                schemas_to_extract = all_schemas
+            
+            # Extract metadata for each schema
+            for schema_name in schemas_to_extract:
+                try:
+                    schema_metadata = self.extract_schema(schema_name)
+                    db_metadata.add_schema(schema_metadata)
+                except Exception as e:
+                    logger.error(f"Error extracting schema {schema_name}: {e}")
+                    continue
+            
+            logger.info(f"Extraction complete. Total schemas: {len(db_metadata.schemas)}")
+            return db_metadata
     
     def extract_table(self, schema_name: str, table_name: str):
         """

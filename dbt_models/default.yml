@@ -1,0 +1,3976 @@
+version: 2
+models:
+- name: .inner_id.87bc581a-cfea-412a-950a-0f205e19add2
+  meta:
+    schema: default
+    table_type: BASE TABLE (SummingMergeTree)
+    row_count: 288840
+  columns:
+  - name: pickup_date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: vendor_id
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: pickup_location_id
+    data_type: UInt16
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: dropoff_location_id
+    data_type: UInt16
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: passenger_count_sum
+    data_type: UInt64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: trip_distance_sum
+    data_type: Float64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: fare_amount_sum
+    data_type: Float64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: tip_amount_sum
+    data_type: Float64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: tolls_amount_sum
+    data_type: Float64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: total_amount_sum
+    data_type: Float64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: trips_count
+    data_type: UInt64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: active_addresses
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 228835
+  columns:
+  - name: address
+    data_type: UInt256
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: transactions_count
+    data_type: UInt64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: active_addresses_dict
+  meta:
+    schema: default
+    table_type: BASE TABLE (Dictionary)
+  columns:
+  - name: address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transactions_count
+    data_type: UInt64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: active_addresses_per_month
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 393112
+  columns:
+  - name: yyyymm
+    data_type: UInt32
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: address
+    data_type: UInt256
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: transactions_count
+    data_type: UInt64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: active_addresses_per_month_dict
+  meta:
+    schema: default
+    table_type: BASE TABLE (Dictionary)
+  columns:
+  - name: yyyymm
+    data_type: UInt16
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transactions_count
+    data_type: UInt64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: addresses
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 4654183816
+  columns:
+  - name: address
+    data_type: UInt256
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: direction
+    data_type: Int8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_timestamp
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_number
+    data_type: Int64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: value
+    data_type: Float64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: addresses_3
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 4654183816
+  columns:
+  - name: address
+    data_type: UInt256
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: direction
+    data_type: Int8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_timestamp
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_number
+    data_type: Int64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: value
+    data_type: Float64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: morton
+    data_type: UInt64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: airports
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 7543
+  columns:
+  - name: AirportID
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: Name
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: City
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Country
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: IATA
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ICAO
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Latitude
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Longitude
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Altitude
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Timezone
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DST
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Tz
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Type
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Source
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: aws_public_blockchain_idx
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 148592
+  columns:
+  - name: _path
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: _file
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: column
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: min_value
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: max_value
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: path
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: bitcoin_transactions
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 17540031
+  columns:
+  - name: hash
+    data_type: UInt256
+  - name: version
+    data_type: Int64
+  - name: size
+    data_type: Int64
+  - name: block_hash
+    data_type: UInt256
+  - name: block_number
+    data_type: Int64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: virtual_size
+    data_type: Int64
+  - name: lock_time
+    data_type: Int64
+  - name: input_count
+    data_type: Int64
+  - name: output_count
+    data_type: Int64
+  - name: is_coinbase
+    data_type: Bool
+  - name: input_value
+    data_type: Float64
+  - name: inputs.index
+    data_type: Array(Int64
+  - name: inputs.spent_transaction_hash
+    data_type: Array(UInt256
+  - name: inputs.spent_output_index
+    data_type: Array(Int64
+  - name: inputs.script_asm
+    data_type: Array(String
+  - name: inputs.script_hex
+    data_type: Array(String
+  - name: inputs.sequence
+    data_type: Array(Int64
+  - name: inputs.required_signatures
+    data_type: Array(Int64
+  - name: inputs.type
+    data_type: Array(String
+  - name: inputs.address
+    data_type: Array(UInt256
+  - name: inputs.value
+    data_type: Array(Float64
+  - name: output_value
+    data_type: Float64
+  - name: outputs.index
+    data_type: Array(Int64
+  - name: outputs.required_signatures
+    data_type: Array(Int64
+  - name: outputs.script_asm
+    data_type: Array(String
+  - name: outputs.script_hex
+    data_type: Array(String
+  - name: outputs.type
+    data_type: Array(String
+  - name: outputs.value
+    data_type: Array(Float64
+  - name: block_timestamp
+    data_type: DateTime64(9)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: block_hash
+  meta:
+    schema: default
+    table_type: BASE TABLE (ReplacingMergeTree)
+    row_count: 1023719255
+  columns:
+  - name: block_hash
+    data_type: UInt256
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: morton
+    data_type: UInt64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: block_number
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_timestamp
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: clickcomments
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 76068
+  columns:
+  - name: number
+    data_type: UInt32
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: title
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: state
+    data_type: Enum8('none' = 0, 'open' = 1, 'closed' = 2)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: labels
+    data_type: Array(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: created_at
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: updated_at
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: composite_vec
+    data_type: Array(Float32)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: clickcomments1
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 56476
+  columns:
+  - name: number
+    data_type: UInt32
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: actor_login
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: state
+    data_type: Enum8('none' = 0, 'open' = 1, 'closed' = 2)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: labels
+    data_type: Array(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: created_at
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: title
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: comment
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: title_vec
+    data_type: Array(Float32)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: comment_vec
+    data_type: Array(Float32)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: composite_vec
+    data_type: Array(Float32)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: clickcomments_3_vec
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 271042
+  columns:
+  - name: number
+    data_type: UInt32
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: comment_id
+    data_type: UInt64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: actor_login
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: state
+    data_type: Enum8('none' = 0, 'open' = 1, 'closed' = 2)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: labels
+    data_type: Array(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: created_at
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: title
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: comment
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: title_vec
+    data_type: Array(Float32)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: comment_vec
+    data_type: Array(Float32)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: composite_vec
+    data_type: Array(Float32)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: clickcomments_local
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 271004
+  columns:
+  - name: number
+    data_type: UInt32
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: actor_login
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: state
+    data_type: Enum8('none' = 0, 'open' = 1, 'closed' = 2)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: labels
+    data_type: Array(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: created_at
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: title
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: comment
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: title_vec
+    data_type: Array(Float32)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: comment_vec
+    data_type: Array(Float32)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: composite_vec
+    data_type: Array(Float32)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: clickissues
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 75952
+  columns:
+  - name: number
+    data_type: UInt32
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: title
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: creator_user_login
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: created_at
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: updated_at
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: comments
+    data_type: Array(Tuple(String, String))
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: state
+    data_type: Enum8('none' = 0, 'open' = 1, 'closed' = 2)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: labels
+    data_type: Array(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: contracts
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 65847929
+  columns:
+  - name: address
+    data_type: UInt256
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: bytecode
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_number
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_timestamp
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: last_modified
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: contracts_old
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 65847929
+  columns:
+  - name: address
+    data_type: UInt256
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: bytecode
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_number
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_timestamp
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: last_modified
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: dockerhub_repos
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 9135099
+  columns:
+  - name: timestamp
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: name
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: namespace
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: is_private
+    data_type: Int8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: last_updated
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: star_count
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: pull_count
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: github_events
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 10459043578
+  columns:
+  - name: file_time
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: event_type
+    data_type: Enum8('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' =
+      3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent'
+      = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent'
+      = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent'
+      = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent'
+      = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22, 'DiscussionEvent'
+      = 23)
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: actor_login
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: repo_name
+    data_type: LowCardinality(String)
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: created_at
+    data_type: DateTime
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: updated_at
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: action
+    data_type: Enum8('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted'
+      = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned'
+      = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed'
+      = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create'
+      = 18, 'fork' = 19, 'merged' = 20, 'forked' = 21, 'updated' = 22, 'dismissed'
+      = 23)
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: comment_id
+    data_type: UInt64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: body
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: path
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: position
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: line
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ref
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ref_type
+    data_type: Enum8('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown'
+      = 4)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: creator_user_login
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: number
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: title
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: labels
+    data_type: Array(LowCardinality(String))
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: state
+    data_type: Enum8('none' = 0, 'open' = 1, 'closed' = 2)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: locked
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: assignee
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: assignees
+    data_type: Array(LowCardinality(String))
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: comments
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: author_association
+    data_type: Enum8('NONE' = 0, 'CONTRIBUTOR' = 1, 'OWNER' = 2, 'COLLABORATOR' =
+      3, 'MEMBER' = 4, 'MANNEQUIN' = 5)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: closed_at
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: merged_at
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: merge_commit_sha
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: requested_reviewers
+    data_type: Array(LowCardinality(String))
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: requested_teams
+    data_type: Array(LowCardinality(String))
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: head_ref
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: head_sha
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: base_ref
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: base_sha
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: merged
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: mergeable
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: rebaseable
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: mergeable_state
+    data_type: Enum8('unknown' = 0, 'dirty' = 1, 'clean' = 2, 'unstable' = 3, 'draft'
+      = 4, 'blocked' = 5)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: merged_by
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: review_comments
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: maintainer_can_modify
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: commits
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: additions
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: deletions
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: changed_files
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: diff_hunk
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: original_position
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: commit_id
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: original_commit_id
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: push_size
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: push_distinct_size
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: member_login
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: release_tag_name
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: release_name
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: review_state
+    data_type: Enum8('none' = 0, 'approved' = 1, 'changes_requested' = 2, 'commented'
+      = 3, 'dismissed' = 4, 'pending' = 5)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: actor_id
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: github_events_aggregate
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 284132329
+  columns:
+  - name: repo_name
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: actor_logins
+    data_type: AggregateFunction(uniqExact, String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: github_events_aggregate_2
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 0
+  columns:
+  - name: repo_name
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: actor_logins
+    data_type: AggregateFunction(uniqExact, String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: github_events_aggregate_3
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 377599479
+  columns:
+  - name: repo_name
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: actor_logins
+    data_type: AggregateFunction(uniqExact, String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: bucket
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: github_events_aggregate_4
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 377599479
+  columns:
+  - name: repo_name
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: actor_logins
+    data_type: SimpleAggregateFunction(groupUniqArrayArray, Array(String))
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: bucket
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: github_user_merges
+  meta:
+    schema: default
+    table_type: BASE TABLE (Dictionary)
+  columns:
+  - name: user_login
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: total_merged
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: hash
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 2327091908
+  columns:
+  - name: hash
+    data_type: UInt256
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: morton
+    data_type: UInt64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_number
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transaction_index
+    data_type: UInt16
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_timestamp
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: lineorder_wide
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 600038145
+  columns:
+  - name: LO_ORDERKEY
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_LINENUMBER
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_CUSTKEY
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_PARTKEY
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_SUPPKEY
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_ORDERDATE
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_ORDERPRIORITY
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_SHIPPRIORITY
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_QUANTITY
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_EXTENDEDPRICE
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_ORDTOTALPRICE
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_DISCOUNT
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_REVENUE
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_SUPPLYCOST
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_TAX
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_COMMITDATE
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LO_SHIPMODE
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: C_CUSTKEY
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: C_NAME
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: C_ADDRESS
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: C_CITY
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: C_NATION
+    data_type: LowCardinality(String)
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: C_REGION
+    data_type: Enum8('ASIA' = 0, 'AMERICA' = 1, 'AFRICA' = 2, 'EUROPE' = 3, 'MIDDLE
+      EAST' = 4)
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: C_PHONE
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: C_MKTSEGMENT
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: S_SUPPKEY
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: S_NAME
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: S_ADDRESS
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: S_CITY
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: S_NATION
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: S_REGION
+    data_type: Enum8('ASIA' = 0, 'AMERICA' = 1, 'AFRICA' = 2, 'EUROPE' = 3, 'MIDDLE
+      EAST' = 4)
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: S_PHONE
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: P_PARTKEY
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: P_NAME
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: P_MFGR
+    data_type: Enum8('MFGR#2' = 0, 'MFGR#4' = 1, 'MFGR#5' = 2, 'MFGR#3' = 3, 'MFGR#1'
+      = 4)
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: P_CATEGORY
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: P_BRAND
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: P_COLOR
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: P_TYPE
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: P_SIZE
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: P_CONTAINER
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: ontime
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 201575308
+  columns:
+  - name: Year
+    data_type: UInt16
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Quarter
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Month
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DayofMonth
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DayOfWeek
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: FlightDate
+    data_type: Date
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: UniqueCarrier
+    data_type: FixedString(7)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: AirlineID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Carrier
+    data_type: FixedString(2)
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: TailNum
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: FlightNum
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: OriginAirportID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: OriginAirportSeqID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: OriginCityMarketID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Origin
+    data_type: FixedString(5)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: OriginCityName
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: OriginState
+    data_type: FixedString(2)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: OriginStateFips
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: OriginStateName
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: OriginWac
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DestAirportID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DestAirportSeqID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DestCityMarketID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Dest
+    data_type: FixedString(5)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DestCityName
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DestState
+    data_type: FixedString(2)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DestStateFips
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DestStateName
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DestWac
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: CRSDepTime
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DepTime
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DepDelay
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DepDelayMinutes
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DepDel15
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DepartureDelayGroups
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DepTimeBlk
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: TaxiOut
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: WheelsOff
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: WheelsOn
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: TaxiIn
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: CRSArrTime
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ArrTime
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ArrDelay
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ArrDelayMinutes
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ArrDel15
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ArrivalDelayGroups
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ArrTimeBlk
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Cancelled
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: CancellationCode
+    data_type: FixedString(1)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Diverted
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: CRSElapsedTime
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ActualElapsedTime
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: AirTime
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Flights
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Distance
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DistanceGroup
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: CarrierDelay
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: WeatherDelay
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: NASDelay
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: SecurityDelay
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LateAircraftDelay
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: FirstDepTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: TotalAddGTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: LongestAddGTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DivAirportLandings
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DivReachedDest
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DivActualElapsedTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DivArrDelay
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: DivDistance
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div1Airport
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div1AirportID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div1AirportSeqID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div1WheelsOn
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div1TotalGTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div1LongestGTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div1WheelsOff
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div1TailNum
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div2Airport
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div2AirportID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div2AirportSeqID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div2WheelsOn
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div2TotalGTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div2LongestGTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div2WheelsOff
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div2TailNum
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div3Airport
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div3AirportID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div3AirportSeqID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div3WheelsOn
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div3TotalGTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div3LongestGTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div3WheelsOff
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div3TailNum
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div4Airport
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div4AirportID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div4AirportSeqID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div4WheelsOn
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div4TotalGTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div4LongestGTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div4WheelsOff
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div4TailNum
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div5Airport
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div5AirportID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div5AirportSeqID
+    data_type: Int32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div5WheelsOn
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div5TotalGTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div5LongestGTime
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div5WheelsOff
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: Div5TailNum
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: profile_events
+  meta:
+    schema: default
+    table_type: BASE TABLE (Memory)
+    row_count: 0
+  columns:
+  - name: tag
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: m
+    data_type: Map(String, UInt64)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: s3gc_temp.s3_no_cache
+  meta:
+    schema: default
+    table_type: BASE TABLE (ReplacingMergeTree)
+    row_count: 124694
+  columns:
+  - name: objpath
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: size
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: active
+    data_type: Bool
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: target
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 0
+  columns:
+  - name: id
+    data_type: String
+  - name: approvedSymbol
+    data_type: String
+    meta:
+      is_primary_key: true
+    tests:
+    - unique
+    - not_null
+  - name: biotype
+    data_type: String
+    meta:
+      is_primary_key: true
+    tests:
+    - unique
+    - not_null
+  - name: transcriptIds
+    data_type: Array(String
+  - name: canonicalTranscript
+    data_type: Tuple(id String), chromosome String), start Int64), end Int64), strand
+      String
+  - name: canonicalExons
+    data_type: Array(String
+  - name: genomicLocation
+    data_type: Tuple(chromosome String), start Int64), end Int64), strand Int32
+  - name: alternativeGenes
+    data_type: Array(String
+  - name: approvedName
+    data_type: String
+  - name: go
+    data_type: Array(Tuple(id String), source String), evidence String), aspect String),
+      geneProduct String), ecoId String
+  - name: hallmarks
+    data_type: Tuple(attributes Array(Tuple(pmid Int64), description String), attribute_name
+      String))), cancerHallmarks Array(Tuple(pmid Int64), description String), impact
+      String), label String
+  - name: synonyms
+    data_type: Array(Tuple(label String), source String
+  - name: symbolSynonyms
+    data_type: Array(Tuple(label String), source String
+  - name: nameSynonyms
+    data_type: Array(Tuple(label String), source String
+  - name: functionDescriptions
+    data_type: Array(String
+  - name: subcellularLocations
+    data_type: Array(Tuple(location String), source String), termSL String), labelSL
+      String
+  - name: targetClass
+    data_type: Array(Tuple(id Int64), label String), level String
+  - name: obsoleteSymbols
+    data_type: Array(Tuple(label String), source String
+  - name: obsoleteNames
+    data_type: Array(Tuple(label String), source String
+  - name: constraint
+    data_type: Array(Tuple(constraintType String), score Float32), exp Float32), obs
+      Int32), oe Float32), oeLower Float32), oeUpper Float32), upperRank Int32), upperBin
+      Int32), upperBin6 Int32
+  - name: tep
+    data_type: Tuple(targetFromSourceId String), description String), therapeuticArea
+      String), url String
+  - name: proteinIds
+    data_type: Array(Tuple(id String), source String
+  - name: dbXrefs
+    data_type: Array(Tuple(id String), source String
+  - name: chemicalProbes
+    data_type: Array(Tuple(control String), drugId String), id String), isHighQuality
+      Bool), mechanismOfAction Array(String)), origin Array(String)), probeMinerScore
+      Int64), probesDrugsScore Int64), scoreInCells Int64), scoreInOrganisms Int64),
+      targetFromSourceId String), urls Array(Tuple(niceName String), url String
+  - name: homologues
+    data_type: Array(Tuple(speciesId String), speciesName String), homologyType String),
+      targetGeneId String), isHighConfidence String), targetGeneSymbol String), queryPercentageIdentity
+      Float64), targetPercentageIdentity Float64), priority Int32
+  - name: tractability
+    data_type: Array(Tuple(modality String), id String), value Bool
+  - name: safetyLiabilities
+    data_type: Array(Tuple(event String), eventId String), effects Array(Tuple(direction
+      String), dosing String))), biosamples Array(Tuple(cellFormat String), cellLabel
+      String), tissueId String), tissueLabel String))), isHumanApplicable Bool), datasource
+      String), literature String), url String), studies Array(Tuple(description String),
+      name String), type String
+  - name: pathways
+    data_type: Array(Tuple(pathwayId String), pathway String), topLevelTerm String
+
+- name: taxi_zones
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 263
+  columns:
+  - name: location_id
+    data_type: UInt16
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: zone
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: create_date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: test_codec_speed
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 1000000000
+  columns:
+  - name: x
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: test_github
+  meta:
+    schema: default
+    table_type: BASE TABLE (Memory)
+    row_count: 0
+  columns:
+  - name: date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: uniq_bucket
+    data_type: UInt64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: test_log
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 200000
+  columns:
+  - name: id
+    data_type: UInt64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: event_time
+    data_type: DateTime
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: event_date
+    data_type: Date
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: event_time_ms
+    data_type: DateTime64(3)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: message
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: test_uuid_projections
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 100000
+  columns:
+  - name: id
+    data_type: UInt64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: uuid_from_id
+    data_type: UUID
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: event_id
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ip_address
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ip_v4
+    data_type: IPv4
+  - name: ip_v6
+    data_type: IPv6
+  - name: event_type
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: event_timestamp
+    data_type: DateTime
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: ip_as_ipv6
+    data_type: IPv6
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: test_uuid_with_projections
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 100000
+  columns:
+  - name: id
+    data_type: UInt64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: uuid_from_id
+    data_type: UUID
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: event_id
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ip_address
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: ip_v4
+    data_type: IPv4
+  - name: ip_v6
+    data_type: IPv6
+  - name: event_type
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: event_timestamp
+    data_type: DateTime
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: ip_as_ipv6
+    data_type: IPv6
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: transactions
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 2327091908
+  columns:
+  - name: gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: input
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: nonce
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: value
+    data_type: Float64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_number
+    data_type: Int64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: block_hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transaction_index
+    data_type: Int64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: from_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: to_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: gas_price
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_cumulative_gas_used
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_gas_used
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_contract_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_status
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_effective_gas_price
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transaction_type
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: max_fee_per_gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: max_priority_fee_per_gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_timestamp
+    data_type: DateTime64(9)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: last_modified
+    data_type: DateTime64(9)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: transactions_from_to
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 35192238
+  columns:
+  - name: gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: input
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: nonce
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: value
+    data_type: Float64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_number
+    data_type: Int64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: block_hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transaction_index
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: from_address
+    data_type: UInt256
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: to_address
+    data_type: UInt256
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: gas_price
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_cumulative_gas_used
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_gas_used
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_contract_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_status
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_effective_gas_price
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transaction_type
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: max_fee_per_gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: max_priority_fee_per_gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_timestamp
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: last_modified
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: transactions_morton
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 35192238
+  columns:
+  - name: gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: input
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: nonce
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: value
+    data_type: Float64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_number
+    data_type: Int64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: block_hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transaction_index
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: from_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: to_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: from_address_murmur
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: to_address_murmur
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: gas_price
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_cumulative_gas_used
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_gas_used
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_contract_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_status
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_effective_gas_price
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transaction_type
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: max_fee_per_gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: max_priority_fee_per_gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_timestamp
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: last_modified
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: transactions_morton_direct
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 35192238
+  columns:
+  - name: gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: input
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: nonce
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: value
+    data_type: Float64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_number
+    data_type: Int64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: block_hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transaction_index
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: from_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: to_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: from_address_suf
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: to_address_suf
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: gas_price
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_cumulative_gas_used
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_gas_used
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_contract_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_status
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_effective_gas_price
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transaction_type
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: max_fee_per_gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: max_priority_fee_per_gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_timestamp
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: last_modified
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: transactions_morton_direct_partial
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 35192238
+  columns:
+  - name: gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: input
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: nonce
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: value
+    data_type: Float64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_number
+    data_type: Int64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: block_hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transaction_index
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: from_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: to_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: from_address_suf
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: from_address_suf_fil
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: to_address_suf
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: to_address_suf_fil
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: gas_price
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_cumulative_gas_used
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_gas_used
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_contract_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_status
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_effective_gas_price
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transaction_type
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: max_fee_per_gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: max_priority_fee_per_gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_timestamp
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: last_modified
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: transactions_morton_direct_partial_reorder
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 35192238
+  columns:
+  - name: gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: input
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: nonce
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: value
+    data_type: Float64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_number
+    data_type: Int64
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: block_hash
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transaction_index
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: from_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: to_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: from_address_suf
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: main_address_suf_fil
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: to_address_suf
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: aux_address_suf_fil
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: gas_price
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_cumulative_gas_used
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_gas_used
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_contract_address
+    data_type: UInt256
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_status
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: receipt_effective_gas_price
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: transaction_type
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: max_fee_per_gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: max_priority_fee_per_gas
+    data_type: Int64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: block_timestamp
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: last_modified
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: direction
+    data_type: Int8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: tripdata
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 1310903963
+  columns:
+  - name: pickup_date
+    data_type: Date
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: id
+    data_type: UInt64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: guid
+    data_type: UUID
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: vendor_id
+    data_type: String
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: pickup_datetime
+    data_type: DateTime
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: dropoff_datetime
+    data_type: DateTime
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: passenger_count
+    data_type: UInt8
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: trip_distance
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: pickup_longitude
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: pickup_latitude
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: rate_code_id
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: store_and_fwd_flag
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: dropoff_longitude
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: dropoff_latitude
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: payment_type
+    data_type: LowCardinality(String)
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: fare_amount
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: extra
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: mta_tax
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: tip_amount
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: tolls_amount
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: improvement_surcharge
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: total_amount
+    data_type: Float32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: pickup_location_id
+    data_type: UInt16
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: dropoff_location_id
+    data_type: UInt16
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: junk1
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: junk2
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: user_count
+  meta:
+    schema: default
+    table_type: BASE TABLE (MergeTree)
+    row_count: 22384666
+  columns:
+  - name: actor_login
+    data_type: LowCardinality(String)
+    meta:
+      is_primary_key: true
+      is_nullable: false
+    tests:
+    - unique
+    - not_null
+  - name: id
+    data_type: UInt64
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+
+- name: user_count_dict
+  meta:
+    schema: default
+    table_type: BASE TABLE (Dictionary)
+  columns:
+  - name: actor_login
+    data_type: String
+    meta:
+      is_nullable: false
+    tests:
+    - not_null
+  - name: id
+    data_type: UInt32
+    meta:
+      is_nullable: false
+    tests:
+    - not_null

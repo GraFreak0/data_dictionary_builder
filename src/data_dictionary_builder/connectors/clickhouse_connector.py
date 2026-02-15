@@ -11,14 +11,14 @@ from ..metadata.models import TableMetadata, ColumnMetadata
 class ClickHouseConnector(BaseConnector):
     """Connector for ClickHouse databases."""
     
-    def __init__(self, host: str, port: int, database: str, user: str = 'default', password: str = '', **kwargs):
+    def __init__(self, host: str, port: int, database: str = 'default', user: str = 'default', password: str = '', **kwargs):
         """
         Initialize ClickHouse connector.
         
         Args:
             host: Database host
             port: Database port (native protocol, typically 9000)
-            database: Database name
+            database: Database name (optional - defaults to 'default')
             user: Username (default: 'default')
             password: Password
             **kwargs: Additional connection parameters
@@ -37,6 +37,8 @@ class ClickHouseConnector(BaseConnector):
         self.user = user
         self.password = password
         self.db_type = "clickhouse"
+        self.server_mode = database is None  # ClickHouse can extract from all databases
+        self.connect_database = database if database else 'default'
     
     def connect(self) -> None:
         """Establish connection to ClickHouse database."""
