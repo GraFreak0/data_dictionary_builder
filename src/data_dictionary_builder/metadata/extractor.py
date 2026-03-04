@@ -2,11 +2,24 @@
 Metadata extractor for extracting database metadata.
 """
 
+import fnmatch
 import logging
-from typing import List, Optional, Dict, Any
+import re
+from typing import Dict, List, Optional, Union
+
 from ..connectors import get_connector
 from ..connectors.base import BaseConnector
 from .models import DatabaseMetadata, SchemaMetadata
+
+# schema_filter accepts either:
+#   - None                   → extract everything
+#   - List[str]              → each entry may be:
+#       • an exact name      "public"
+#       • a glob/wildcard    "monkeybook_%"  or  "stg_*"
+#       • a prefix marker    "prefix:stg_"
+#       • a suffix marker    "suffix:_prod"
+#       • a regex marker     "regex:^analytics_\\d{4}$"
+SchemaFilterSpec = Optional[List[str]]
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +28,140 @@ logger = logging.getLogger(__name__)
 
 class MetadataExtractor:
     """Main class for extracting database metadata."""
-    
+
+    # ------------------------------------------------------------------ #
+    # Schema-filter resolution                                             #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _resolve_schema_filter(
+        schema_filter: SchemaFilterSpec,
+        available_schemas: List[str],
+    ) -> List[str]:
+        """
+        Resolve *schema_filter* against *available_schemas* and return the
+        final list of schema names to extract.
+
+        The method is called *after* the connector has already fetched the
+        full list of schemas from the database, so every match is tested
+        against real schema names — no guessing.
+
+        Filter entry formats
+        --------------------
+        None / omitted
+            Extract every available schema (no filtering).
+
+        Exact name  ``"public"``
+            Included only when "public" is present in *available_schemas*.
+
+        Glob / SQL-LIKE wildcard  ``"monkeybook_%"``
+            ``_`` matches any single character, ``%`` or ``*`` match any
+            sequence of characters (case-insensitive).
+            Example: ``"stg_*"`` matches ``stg_orders``, ``stg_customers``.
+
+        Prefix marker  ``"prefix:stg_"``
+            Matches any schema whose name starts with ``stg_``.
+
+        Suffix marker  ``"suffix:_prod"``
+            Matches any schema whose name ends with ``_prod``.
+
+        Contains marker  ``"contains:analytics"``
+            Matches any schema whose name contains ``analytics``.
+
+        Regex marker  ``"regex:^analytics_\\d{4}$"``
+            Full ``re.fullmatch`` against the schema name (case-insensitive
+            by default).
+
+        Entries can be mixed freely in the same list:
+
+            schema_filter=[
+                "public",             # exact
+                "monkeybook_%",       # glob
+                "prefix:stg_",        # prefix
+                "suffix:_prod",       # suffix
+                "regex:^tmp_\\d+$",   # regex
+            ]
+
+        Parameters
+        ----------
+        schema_filter : list[str] | None
+            The filter value passed to ``extract_all_schemas()``.
+        available_schemas : list[str]
+            All schema names returned by the connector for this
+            database / server.
+
+        Returns
+        -------
+        list[str]
+            Ordered, deduplicated list of schema names that matched.
+        """
+        if not schema_filter:
+            return available_schemas
+
+        matched: List[str] = []
+        seen: set = set()
+
+        def _add(name: str) -> None:
+            if name not in seen:
+                seen.add(name)
+                matched.append(name)
+
+        for entry in schema_filter:
+            entry_lower = entry.lower()
+
+            # ── Explicit markers ────────────────────────────────────────
+            if entry_lower.startswith("prefix:"):
+                prefix = entry[len("prefix:"):]
+                for s in available_schemas:
+                    if s.lower().startswith(prefix.lower()):
+                        _add(s)
+
+            elif entry_lower.startswith("suffix:"):
+                suffix = entry[len("suffix:"):]
+                for s in available_schemas:
+                    if s.lower().endswith(suffix.lower()):
+                        _add(s)
+
+            elif entry_lower.startswith("contains:"):
+                substr = entry[len("contains:"):]
+                for s in available_schemas:
+                    if substr.lower() in s.lower():
+                        _add(s)
+
+            elif entry_lower.startswith("regex:"):
+                pattern = entry[len("regex:"):]
+                for s in available_schemas:
+                    if re.fullmatch(pattern, s, re.IGNORECASE):
+                        _add(s)
+
+            # ── Glob / wildcard (_, %, *)  ───────────────────────────────
+            elif any(c in entry for c in ("_", "%", "*", "?")):
+                # Normalise SQL-LIKE wildcards to fnmatch style:
+                #   %  →  *      (any sequence)
+                #   _  →  ?      (any single char)  — only when used as wildcard
+                # We convert % first, then handle _ carefully:
+                # a leading/trailing _ is almost certainly a naming convention
+                # character, not a wildcard; treat _ as a wildcard only when
+                # the entry also contains % or *.
+                glob = entry.replace("%", "*")
+                if "*" in glob:
+                    # entry was SQL-LIKE style — also treat _ as single-char wildcard
+                    glob = glob.replace("_", "?")
+                for s in available_schemas:
+                    if fnmatch.fnmatchcase(s.lower(), glob.lower()):
+                        _add(s)
+
+            # ── Exact match (original behaviour) ────────────────────────
+            else:
+                if entry in available_schemas:
+                    _add(entry)
+
+        logger.info(
+            f"schema_filter {schema_filter!r} matched "
+            f"{len(matched)} schema(s): {matched}"
+        )
+        return matched
+
     def __init__(self, db_type: str, **connection_params):
         """
         Initialize the metadata extractor.
@@ -99,12 +245,8 @@ class MetadataExtractor:
             all_databases = connector.get_schemas()  # In server mode, this returns databases
             logger.info(f"Found {len(all_databases)} databases on server")
             
-            # Filter databases if specified
-            if schema_filter:
-                databases_to_extract = [db for db in all_databases if db in schema_filter]
-                logger.info(f"Filtering to {len(databases_to_extract)} databases: {databases_to_extract}")
-            else:
-                databases_to_extract = all_databases
+            # Filter databases — supports exact names, globs, prefix:/suffix:/regex: markers
+            databases_to_extract = self._resolve_schema_filter(schema_filter, all_databases)
             
             # Extract each database as a "schema"
             for db_name in databases_to_extract:
@@ -157,12 +299,8 @@ class MetadataExtractor:
             all_schemas = connector.get_schemas()
             logger.info(f"Found {len(all_schemas)} schemas in database")
             
-            # Filter schemas if specified
-            if schema_filter:
-                schemas_to_extract = [s for s in all_schemas if s in schema_filter]
-                logger.info(f"Filtering to {len(schemas_to_extract)} schemas: {schemas_to_extract}")
-            else:
-                schemas_to_extract = all_schemas
+            # Filter schemas — supports exact names, globs, prefix:/suffix:/regex: markers
+            schemas_to_extract = self._resolve_schema_filter(schema_filter, all_schemas)
             
             # Extract metadata for each schema
             for schema_name in schemas_to_extract:

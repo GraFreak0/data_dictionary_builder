@@ -1,6 +1,7 @@
 # Core dependencies
 PyYAML>=6.0.1
 python-dotenv>=1.0.0
+click>=8.0.0
 
 # Database connectors
 psycopg2-binary>=2.9.9  # PostgreSQL

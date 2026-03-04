@@ -1007,7 +1007,7 @@ models:
   meta:
     schema: default
     table_type: BASE TABLE (MergeTree)
-    row_count: 10459043578
+    row_count: 10460060785
   columns:
   - name: file_time
     data_type: DateTime
