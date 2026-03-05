@@ -2,10 +2,14 @@
 Email sender for sending schema comparison reports.
 """
 
+import os
 import smtplib
 import logging
+from email.mime.application import MIMEApplication
+from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email import encoders
 from typing import Dict, Any, List, Optional
 
 # Configure logging
@@ -47,32 +51,33 @@ class EmailSender:
         self,
         recipient_emails: List[str],
         report: Dict[str, Any],
-        subject: Optional[str] = None
+        subject: Optional[str] = None,
+        attachments: Optional[List[str]] = None,
     ) -> bool:
         """
         Send a schema comparison report via email.
-        
+
         Args:
             recipient_emails: List of recipient email addresses
             report: Comparison report dictionary
             subject: Optional custom email subject
-            
+            attachments: Optional list of file paths to attach (e.g. a PDF report)
+
         Returns:
             True if email sent successfully, False otherwise
         """
         if subject is None:
             subject = "Database Schema Comparison Report"
-        
-        # Generate email body
+
         html_body = self._generate_html_report(report)
         text_body = self._generate_text_report(report)
-        
-        # Send email
+
         return self.send_email(
             recipient_emails=recipient_emails,
             subject=subject,
             text_body=text_body,
-            html_body=html_body
+            html_body=html_body,
+            attachments=attachments,
         )
     
     def send_email(
@@ -80,36 +85,53 @@ class EmailSender:
         recipient_emails: List[str],
         subject: str,
         text_body: str,
-        html_body: Optional[str] = None
+        html_body: Optional[str] = None,
+        attachments: Optional[List[str]] = None,
     ) -> bool:
         """
-        Send an email.
-        
+        Send an email with optional file attachments.
+
         Args:
             recipient_emails: List of recipient email addresses
             subject: Email subject
             text_body: Plain text email body
             html_body: Optional HTML email body
-            
+            attachments: Optional list of file paths to attach
+
         Returns:
             True if email sent successfully, False otherwise
         """
         try:
-            # Create message
-            message = MIMEMultipart('alternative')
+            # Use 'mixed' when attachments are present so we can nest
+            # the alternative text/html parts alongside binary parts.
+            if attachments:
+                message = MIMEMultipart('mixed')
+                alt_part = MIMEMultipart('alternative')
+                alt_part.attach(MIMEText(text_body, 'plain'))
+                if html_body:
+                    alt_part.attach(MIMEText(html_body, 'html'))
+                message.attach(alt_part)
+
+                for file_path in attachments:
+                    if not os.path.exists(file_path):
+                        logger.warning("Attachment not found, skipping: %s", file_path)
+                        continue
+                    with open(file_path, "rb") as fh:
+                        part = MIMEApplication(fh.read(), Name=os.path.basename(file_path))
+                    part["Content-Disposition"] = (
+                        f'attachment; filename="{os.path.basename(file_path)}"'
+                    )
+                    message.attach(part)
+            else:
+                message = MIMEMultipart('alternative')
+                message.attach(MIMEText(text_body, 'plain'))
+                if html_body:
+                    message.attach(MIMEText(html_body, 'html'))
+
             message['Subject'] = subject
             message['From'] = self.sender_email
             message['To'] = ', '.join(recipient_emails)
-            
-            # Add text part
-            text_part = MIMEText(text_body, 'plain')
-            message.attach(text_part)
-            
-            # Add HTML part if provided
-            if html_body:
-                html_part = MIMEText(html_body, 'html')
-                message.attach(html_part)
-            
+
             # Connect to SMTP server and send
             if self.use_ssl:
                 server = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port)
@@ -117,11 +139,11 @@ class EmailSender:
                 server = smtplib.SMTP(self.smtp_host, self.smtp_port)
                 if self.use_tls:
                     server.starttls()
-            
+
             # Login if password provided
             if self.sender_password:
                 server.login(self.sender_email, self.sender_password)
-            
+
             # Send email
             server.sendmail(self.sender_email, recipient_emails, message.as_string())
             server.quit()

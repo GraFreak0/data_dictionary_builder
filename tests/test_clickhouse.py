@@ -1,48 +1,40 @@
 """
 test_clickhouse.py
 ==================
-Exercises every major feature of data_dictionary_builder against a live
-ClickHouse instance, including all schema-filter strategies now built into
-MetadataExtractor.extract_all_schemas().
+Exercises every major feature of data_dictionary_builder against ClickHouse.
 
-Schema-filter formats demonstrated
-------------------------------------
-  Exact name    schema_filter=["default"]
-  Glob/LIKE     schema_filter=["default%"]  or  "monkeybook_%"
-  prefix:       schema_filter=["prefix:stg_"]
-  suffix:       schema_filter=["suffix:_prod"]
-  contains:     schema_filter=["contains:analytics"]
-  regex:        schema_filter=["regex:^tmp_\\d+$"]
-  Mixed list    any combination of the above in one call
+Output layout
+-------------
+    ./models/          ← YAML files (per-schema and combined)
+    ./reports/         ← JSON comparison reports + compiled reports.pdf
 
-Configuration – set these environment variables (or a .env file):
+Configuration (.env or environment variables):
     clickhouse_host      default: localhost
     clickhouse_port      default: 9440
     clickhouse_user
     clickhouse_password
     clickhouse_db        optional – omit to scan all databases on the server
 
-Optional email:
+Optional email (PDF attached automatically):
     SMTP_HOST  SMTP_PORT  SMTP_USER  SMTP_PASSWORD  EMAIL_TO
 """
 
 import os
-import json
-import tempfile
 
 from dotenv import load_dotenv
 
 from data_dictionary_builder import MetadataExtractor, YAMLGenerator, SchemaComparator
-from data_dictionary_builder.notifications.email_sender import EmailSender
+
+from data_dictionary_builder import DDHelper
 
 load_dotenv()
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Connection config
-# ─────────────────────────────────────────────────────────────────────────────
+CONNECTOR      = "clickhouse"
+EMOJI          = "🔷 "
+TARGET_SCHEMAS = ["default", "system"]
 
 BASE_CONFIG = {
-    "db_type":  "clickhouse",
+    "db_type":  CONNECTOR,
     "host":     os.getenv("clickhouse_host", "localhost"),
     "port":     int(os.getenv("clickhouse_port", 9440)),
     "user":     os.getenv("clickhouse_user", "default"),
@@ -50,312 +42,172 @@ BASE_CONFIG = {
     "secure":   True,
     "verify":   False,
 }
-
 if os.getenv("clickhouse_db"):
     BASE_CONFIG["database"] = os.getenv("clickhouse_db")
 
-# Primary schemas used for extraction and comparison steps
-TARGET_SCHEMAS = ["default", "system"]
-
 
 def section(title: str) -> None:
-    print(f"\n{'='*60}")
-    print(f"  {title}")
-    print("=" * 60)
+    print(f"\n{'='*60}\n  {title}\n{'='*60}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. Connection test
+# Tests
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_connection():
     section("1. Connection Test")
-    extractor = MetadataExtractor(**BASE_CONFIG)
-    ok = extractor.test_connection()
-    print(f"  Connection successful: {ok}")
-    assert ok, "❌  Could not connect to ClickHouse – check env vars"
+    ok = MetadataExtractor(**BASE_CONFIG).test_connection()
+    assert ok, "❌  Could not connect – check env vars"
     print("  ✓ Connected")
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. Schema listing
-# ─────────────────────────────────────────────────────────────────────────────
 
 def test_schema_listing():
     section("2. Schema / Database Listing")
     with MetadataExtractor(**BASE_CONFIG) as ext:
         schemas = ext.get_schemas_list()
-    print(f"  Available schemas: {schemas}")
+    print(f"  Schemas: {schemas}")
     assert isinstance(schemas, list)
     print(f"  ✓ Found {len(schemas)} schema(s)")
     return schemas
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. Schema-filter strategies
-#
-# All entries are passed directly to extract_all_schemas(schema_filter=[...]).
-# The extractor fetches the real schema list from the DB first, then resolves
-# each entry against it — no pre-fetching or separate filter step needed.
-# ─────────────────────────────────────────────────────────────────────────────
-
 def test_schema_filter_strategies():
     section("3. Schema-Filter Strategies")
-
     with MetadataExtractor(**BASE_CONFIG) as ext:
         live = ext.get_schemas_list()
-    print(f"  Live schemas on server: {live}\n")
-
+    print(f"  Live schemas: {live}\n")
     cases = [
-        # (label, schema_filter)
-        ("3a. Exact names  (original behaviour)",
-         ["default", "system"]),
-
-        ("3b. Glob / SQL-LIKE  (default% matches 'default')",
-         ["default%"]),
-
-        ("3c. prefix: marker  — anything starting with 'def'",
-         ["prefix:def"]),
-
-        ("3d. suffix: marker  — anything ending with 'ault'",
-         ["suffix:ault"]),
-
-        ("3e. contains: marker  — anything containing 'sys'",
-         ["contains:sys"]),
-
-        ("3f. regex: marker  — full match ^def.*$",
-         ["regex:^def.*$"]),
-
-        ("3g. Mixed list  — exact + prefix + regex in one call",
-         ["system", "prefix:def", "regex:^tmp_\\d+$"]),
-
-        ("3h. No filter (None)  — extract everything",
-         None),
+        ("3a. Exact names",            ["default", "system"]),
+        ("3b. Glob  (default%)",       ["default%"]),
+        ("3c. prefix:",                ["prefix:def"]),
+        ("3d. suffix:",                ["suffix:ault"]),
+        ("3e. contains:",              ["contains:sys"]),
+        ("3f. regex:",                 ["regex:^def.*$"]),
+        ("3g. Mixed",                  ["system", "prefix:def", "regex:^tmp_\\d+$"]),
+        ("3h. None  (all)",            None),
     ]
-
     for label, sf in cases:
         with MetadataExtractor(**BASE_CONFIG) as ext:
-            db_meta = ext.extract_all_schemas(schema_filter=sf)
-        matched = [s.name for s in db_meta.schemas]
-        print(f"  {label}")
-        print(f"    filter  : {sf}")
-        print(f"    matched : {matched}\n")
+            matched = [s.name for s in ext.extract_all_schemas(schema_filter=sf).schemas]
+        print(f"  ✓ {label}\n      filter: {sf}  →  {matched}\n")
+    print("  ✓ Filter strategies OK")
 
-    print("  ✓ Schema-filter strategies demonstrated")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. Full extraction with targeted filter
-# ─────────────────────────────────────────────────────────────────────────────
 
 def test_extract_all_schemas():
     section("4. Full Metadata Extraction")
-
     with MetadataExtractor(**BASE_CONFIG) as ext:
         db_meta = ext.extract_all_schemas(schema_filter=TARGET_SCHEMAS)
-
-    print(f"  Database : {db_meta.database_name}")
-    print(f"  DB type  : {db_meta.database_type}")
-    print(f"  Version  : {db_meta.version}")
-    print(f"  Schemas  : {len(db_meta.schemas)}")
-
+    print(f"  Database: {db_meta.database_name}  |  Version: {db_meta.version}")
     for schema in db_meta.schemas:
-        print(f"\n  [{schema.name}]  {len(schema.tables)} table(s)")
-        for table in schema.tables[:5]:
-            print(f"    • {table.name}  ({len(table.columns)} cols, "
-                  f"{table.row_count} rows)")
+        print(f"  [{schema.name}]  {len(schema.tables)} table(s)")
+        for t in schema.tables[:5]:
+            print(f"    • {t.name}  ({len(t.columns)} cols, {t.row_count} rows)")
         if len(schema.tables) > 5:
-            print(f"    … and {len(schema.tables) - 5} more")
-
-    print("\n  ✓ Extraction complete")
+            print(f"    … and {len(schema.tables)-5} more")
+    print("  ✓ Extraction OK")
     return db_meta
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. Single schema extraction
-# ─────────────────────────────────────────────────────────────────────────────
-
 def test_extract_single_schema():
     section("5. Extract Single Schema")
-    schema_name = TARGET_SCHEMAS[0]
-
     with MetadataExtractor(**BASE_CONFIG) as ext:
-        schema = ext.extract_schema(schema_name)
-
-    print(f"  Schema : {schema.name}")
-    print(f"  Tables : {len(schema.tables)}")
-    for t in schema.tables[:5]:
-        print(f"    • {t.name}")
-    print("  ✓ Single-schema extraction OK")
+        schema = ext.extract_schema(TARGET_SCHEMAS[0])
+    print(f"  Schema: {schema.name}  ({len(schema.tables)} tables)")
+    print("  ✓ OK")
     return schema
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. Single table extraction
-# ─────────────────────────────────────────────────────────────────────────────
 
 def test_extract_single_table(schema):
     section("6. Extract Single Table")
     if not schema.tables:
-        print("  ⚠  No tables in schema – skipping")
-        return
-
-    table_name  = schema.tables[0].name
-    schema_name = TARGET_SCHEMAS[0]
-
+        print("  ⚠  No tables – skipping"); return
     with MetadataExtractor(**BASE_CONFIG) as ext:
-        table = ext.extract_table(schema_name, table_name)
-
-    print(f"  Table      : {table.schema_name}.{table.name}")
-    print(f"  Row count  : {table.row_count}")
-    print(f"  Primary key: {table.primary_keys}")
-    print(f"  Columns    : {len(table.columns)}")
+        table = ext.extract_table(TARGET_SCHEMAS[0], schema.tables[0].name)
+    print(f"  {table.schema_name}.{table.name}  ({table.row_count} rows)")
+    print(f"  PKs: {table.primary_keys}  |  Columns: {len(table.columns)}")
     for col in table.columns[:8]:
-        nullable = "NULL" if col.is_nullable else "NOT NULL"
         pk = " [PK]" if col.is_primary_key else ""
-        print(f"    • {col.name}: {col.data_type} {nullable}{pk}")
-    if len(table.columns) > 8:
-        print(f"    … and {len(table.columns) - 8} more")
-    print("  ✓ Single-table extraction OK")
+        print(f"    • {col.name}: {col.data_type}{'  NULL' if col.is_nullable else '  NOT NULL'}{pk}")
+    print("  ✓ OK")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. YAML generation – per-schema
-# ─────────────────────────────────────────────────────────────────────────────
-
-def test_yaml_per_schema(db_meta):
-    section("7. YAML Generation – Per-Schema Files")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        gen   = YAMLGenerator(output_dir=tmpdir)
-        files = gen.generate_yaml_files(db_meta)
-        print(f"  Generated {len(files)} YAML file(s):")
-        for f in files:
-            print(f"    • {os.path.basename(f)}  ({os.path.getsize(f):,} bytes)")
-    print("  ✓ Per-schema YAML generation OK")
+def test_yaml_per_schema(db_meta, dirs):
+    section("7. YAML Generation – Per-Schema  →  ./models/")
+    gen   = YAMLGenerator(output_dir=str(dirs["models"]))
+    files = gen.generate_yaml_files(db_meta)
+    for f in files:
+        print(f"  • {os.path.basename(f)}  ({os.path.getsize(f):,} bytes)")
+    print("  ✓ Per-schema YAML OK")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 8. YAML generation – single combined file
-# ─────────────────────────────────────────────────────────────────────────────
-
-def test_yaml_combined(db_meta):
-    section("8. YAML Generation – Single Combined File")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        gen      = YAMLGenerator(output_dir=tmpdir)
-        filepath = gen.generate_single_yaml(db_meta, filename="all_models.yml")
-        print(f"  File: {os.path.basename(filepath)}  ({os.path.getsize(filepath):,} bytes)")
-    print("  ✓ Combined YAML generation OK")
+def test_yaml_combined(db_meta, dirs):
+    section("8. YAML Generation – Combined  →  ./models/all_models.yml")
+    filepath = YAMLGenerator(output_dir=str(dirs["models"])).generate_single_yaml(
+        db_meta, filename="all_models.yml"
+    )
+    print(f"  {os.path.basename(filepath)}  ({os.path.getsize(filepath):,} bytes)")
+    print("  ✓ Combined YAML OK")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 9. Documentation gap detection
-# ─────────────────────────────────────────────────────────────────────────────
-
-def test_documentation_gaps(db_meta):
+def test_documentation_gaps(db_meta, dirs):
     section("9. Documentation Gap Detection")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        gen            = YAMLGenerator(output_dir=tmpdir)
-        tables_no_desc = gen.get_tables_without_descriptions(db_meta)
-        cols_no_desc   = gen.get_columns_without_descriptions(db_meta)
-
-    total_tables = sum(len(s.tables) for s in db_meta.schemas)
-    total_cols   = sum(len(t.columns) for s in db_meta.schemas for t in s.tables)
-    tbl_pct = 100 * (total_tables - len(tables_no_desc)) / max(total_tables, 1)
-    col_pct = 100 * (total_cols   - len(cols_no_desc))   / max(total_cols, 1)
-
-    print(f"  Tables  : {total_tables} total | "
-          f"{len(tables_no_desc)} missing descriptions ({tbl_pct:.0f}% documented)")
-    print(f"  Columns : {total_cols} total | "
-          f"{len(cols_no_desc)} missing descriptions ({col_pct:.0f}% documented)")
-    if tables_no_desc:
-        print("  Sample tables needing descriptions (first 5):")
-        for t in tables_no_desc[:5]:
-            print(f"    • {t}")
-    if cols_no_desc:
-        print("  Sample columns needing descriptions (first 5):")
-        for c in cols_no_desc[:5]:
-            print(f"    • {c['schema']}.{c['table']}.{c['column']}")
+    gen            = YAMLGenerator(output_dir=str(dirs["models"]))
+    tables_no_desc = gen.get_tables_without_descriptions(db_meta)
+    cols_no_desc   = gen.get_columns_without_descriptions(db_meta)
+    total_t = sum(len(s.tables) for s in db_meta.schemas)
+    total_c = sum(len(t.columns) for s in db_meta.schemas for t in s.tables)
+    print(f"  Tables  : {100*(total_t-len(tables_no_desc))//max(total_t,1)}%  ({len(tables_no_desc)}/{total_t} missing)")
+    print(f"  Columns : {100*(total_c-len(cols_no_desc))//max(total_c,1)}%  ({len(cols_no_desc)}/{total_c} missing)")
     print("  ✓ Gap detection OK")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 10. Schema comparison
-# ─────────────────────────────────────────────────────────────────────────────
-
-def test_schema_comparison():
+def test_schema_comparison(dirs):
     section("10. Schema Comparison")
-
     if len(TARGET_SCHEMAS) < 2:
-        print("  ⚠  Need at least 2 schemas in TARGET_SCHEMAS – skipping")
-        return None
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        comparator = SchemaComparator(
-            source_config=BASE_CONFIG,
-            destination_config=BASE_CONFIG,
-            yaml_output_dir=tmpdir,
-        )
-        report = comparator.compare_and_generate_report(
-            source_schema_name=TARGET_SCHEMAS[0],
-            destination_schema_name=TARGET_SCHEMAS[1],
-            include_yaml_gaps=True,
-        )
-
+        print("  ⚠  Need ≥2 schemas – skipping"); return None
+    report = SchemaComparator(
+        source_config=BASE_CONFIG, destination_config=BASE_CONFIG,
+        yaml_output_dir=str(dirs["models"]),
+    ).compare_and_generate_report(
+        source_schema_name=TARGET_SCHEMAS[0],
+        destination_schema_name=TARGET_SCHEMAS[1],
+        include_yaml_gaps=True,
+    )
     s = report["summary"]
-    print(f"  Missing tables  : {s['missing_tables_count']}")
-    print(f"  Missing columns : {s['missing_columns_count']}")
-    print(f"  Type mismatches : {s['type_mismatches_count']}")
-    print(f"  Tables w/o desc : {s.get('tables_without_descriptions_count', 'n/a')}")
-    print(f"  Cols w/o desc   : {s.get('columns_without_descriptions_count', 'n/a')}")
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as fh:
-        json.dump(report, fh, indent=2, default=str)
-        print(f"\n  Full report saved to: {fh.name}")
-
-    print("  ✓ Schema comparison OK")
+    print(f"  Missing tables: {s['missing_tables_count']}  |  columns: {s['missing_columns_count']}  |  type mismatches: {s['type_mismatches_count']}")
+    path = helper.save_report(report)
+    print(f"  JSON → {path}")
+    print("  ✓ OK")
     return report
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 11. Email report (optional)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def test_email_report(report):
-    section("11. Email Report  (optional)")
-    smtp_host = os.getenv("SMTP_HOST")
-    email_to  = os.getenv("EMAIL_TO")
-
-    if not smtp_host or not email_to or report is None:
-        print("  ⚠  SMTP_HOST / EMAIL_TO not set – skipping email test")
-        return
-
-    sender = EmailSender(
-        smtp_host=smtp_host,
-        smtp_port=int(os.getenv("SMTP_PORT", 587)),
-        sender_email=os.getenv("SMTP_USER", ""),
-        sender_password=os.getenv("SMTP_PASSWORD"),
-        use_tls=True,
-    )
-    ok = sender.send_comparison_report(
-        recipient_emails=[email_to],
-        report=report,
-        subject="[ClickHouse Test] Schema Comparison Report",
-    )
-    print(f"  Email sent: {ok}")
-    print("  ✓ Email test complete")
+def test_compile_pdf(helper):
+    section("11. Compile Reports → PDF  →  ./reports/pdf/")
+    pdf_path = helper.compile_pdf()
+    if pdf_path:
+        print(f"  PDF → {pdf_path}  ({os.path.getsize(pdf_path):,} bytes)")
+        print("  ✓ PDF compilation OK")
+    else:
+        print("  ⚠  No JSON reports or reportlab unavailable – skipping")
+    return pdf_path
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 12. Metadata export to JSON
-# ─────────────────────────────────────────────────────────────────────────────
+def test_email_report(report, pdf_path):
+    section("12. Email Report + PDF Attachment  (optional)")
+    if report is None:
+        print("  ⚠  No report – skipping"); return
+    ok = helper.send_report_email(report=report, pdf_path=pdf_path,
+                             subject="[ClickHouse Test] Schema Comparison Report")
+    print("  ✓ Email sent" if ok else "  ⚠  SMTP not configured – skipped")
 
-def test_metadata_export(db_meta):
-    section("12. Metadata Export to JSON")
-    data = db_meta.to_dict()
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as fh:
-        json.dump(data, fh, indent=2, default=str)
-        print(f"  Exported to: {fh.name}")
-        print(f"  Schemas in export: {len(data['schemas'])}")
+
+def test_metadata_export(db_meta, dirs):
+    section("13. Metadata Export to JSON  →  ./reports/json/")
+    _meta_path = helper.reports_json_dir / "clickhouse_metadata.json"
+    import json as _json_mod
+    _meta_path.write_text(_json_mod.dumps(db_meta.to_dict(), indent=2, default=str), encoding="utf-8")
+    path = _meta_path
+    print(f"  {path}  ({os.path.getsize(path):,} bytes)")
     print("  ✓ Export OK")
 
 
@@ -364,9 +216,11 @@ def test_metadata_export(db_meta):
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("\n" + "🔷 " * 30)
-    print("  data_dictionary_builder — ClickHouse full feature test")
-    print("🔷 " * 30)
+    print(f"\n{EMOJI*30}\n  data_dictionary_builder — ClickHouse full feature test\n{EMOJI*30}")
+
+    helper = DDHelper(".")
+    dirs   = helper.dirs
+    print(f"\n  models/       → {dirs['models']}\n  reports/json/ → {dirs['reports_json']}\n  reports/pdf/  → {dirs['reports_pdf']}")
 
     test_connection()
     test_schema_listing()
@@ -376,13 +230,15 @@ if __name__ == "__main__":
     schema  = test_extract_single_schema()
 
     test_extract_single_table(schema)
-    test_yaml_per_schema(db_meta)
-    test_yaml_combined(db_meta)
-    test_documentation_gaps(db_meta)
+    test_yaml_per_schema(db_meta, dirs)
+    test_yaml_combined(db_meta, dirs)
+    test_documentation_gaps(db_meta, dirs)
 
-    report = test_schema_comparison()
-    test_email_report(report)
-    test_metadata_export(db_meta)
+    report   = test_schema_comparison(dirs)
+    pdf_path = test_compile_pdf(helper)
+
+    test_email_report(report, pdf_path)
+    test_metadata_export(db_meta, dirs)
 
     print("\n" + "✅ " * 30)
     print("  All ClickHouse feature tests passed!")
