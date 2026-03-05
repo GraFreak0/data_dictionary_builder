@@ -5,7 +5,8 @@ Metadata extractor for extracting database metadata.
 import fnmatch
 import logging
 import re
-from typing import Dict, List, Optional, Union
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Optional, Tuple, Union
 
 from ..connectors import get_connector
 from ..connectors.base import BaseConnector
@@ -210,81 +211,187 @@ class MetadataExtractor:
         
         return schema_metadata
     
-    def extract_all_schemas(self, schema_filter: Optional[List[str]] = None) -> DatabaseMetadata:
+    # ------------------------------------------------------------------ #
+    # Parallel extraction helpers                                          #
+    # ------------------------------------------------------------------ #
+
+    def _extract_schema_worker(self, schema_name: str) -> Tuple[str, Optional[SchemaMetadata]]:
+        """
+        Worker executed inside a thread pool.  Each invocation creates its
+        own connector so threads never share a connection.
+
+        Returns
+        -------
+        (schema_name, SchemaMetadata | None)
+            None is returned when extraction fails so the caller can log the
+            error without crashing the whole pool.
+        """
+        try:
+            worker_connector = get_connector(self.db_type, **self.connection_params)
+            worker_connector.connect()
+            try:
+                logger.info(f"[worker] Extracting schema: {schema_name}")
+                schema_metadata = worker_connector.extract_schema_metadata(schema_name)
+                logger.info(
+                    f"[worker] Done — {schema_name}: "
+                    f"{len(schema_metadata.tables)} table(s)"
+                )
+                return schema_name, schema_metadata
+            finally:
+                worker_connector.disconnect()
+        except Exception as exc:
+            logger.error(f"[worker] Error extracting schema '{schema_name}': {exc}")
+            return schema_name, None
+
+    def _extract_server_db_worker(self, db_name: str) -> Tuple[str, Optional[SchemaMetadata]]:
+        """
+        Worker for server-mode: extracts all tables from a single database,
+        using its own dedicated connector.
+
+        Returns
+        -------
+        (db_name, SchemaMetadata | None)
+        """
+        try:
+            worker_connector = get_connector(self.db_type, **self.connection_params)
+            worker_connector.connect()
+            try:
+                worker_connector.switch_database(db_name)
+                actual_schemas = worker_connector.get_schemas()
+
+                db_schema = SchemaMetadata(name=db_name)
+                for schema_name in actual_schemas:
+                    if schema_name in ['pg_catalog', 'information_schema', 'pg_toast']:
+                        continue
+                    tables = worker_connector.get_tables(schema_name)
+                    for table_name in tables:
+                        table_metadata = worker_connector.get_table_metadata(schema_name, table_name)
+                        table_metadata.name = f"{schema_name}.{table_name}"
+                        db_schema.add_table(table_metadata)
+
+                logger.info(
+                    f"[worker] Done — {db_name}: {len(db_schema.tables)} table(s)"
+                )
+                return db_name, db_schema
+            finally:
+                worker_connector.disconnect()
+        except Exception as exc:
+            logger.error(f"[worker] Error extracting database '{db_name}': {exc}")
+            return db_name, None
+
+    def _run_parallel(
+        self,
+        worker_fn,
+        items: List[str],
+        parallel_workers: int,
+    ) -> List[Tuple[str, Optional[SchemaMetadata]]]:
+        """
+        Submit *items* to *worker_fn* using a ThreadPoolExecutor capped at
+        *parallel_workers* threads (further capped at len(items) so
+        over-provisioning is harmless).
+
+        Results are returned in the **original order** of *items*.
+        """
+        actual_workers = min(parallel_workers, len(items))
+        logger.info(
+            f"Parallel extraction: {len(items)} item(s) across "
+            f"{actual_workers} worker thread(s)"
+        )
+
+        # Map future → original index so we can restore order
+        index_map: Dict[object, int] = {}
+        results: List[Tuple[str, Optional[SchemaMetadata]]] = [None] * len(items)
+
+        with ThreadPoolExecutor(max_workers=actual_workers) as pool:
+            for idx, item in enumerate(items):
+                future = pool.submit(worker_fn, item)
+                index_map[future] = idx
+
+            for future in as_completed(index_map):
+                idx = index_map[future]
+                results[idx] = future.result()
+
+        return results
+
+    # ------------------------------------------------------------------ #
+    # Public extraction API                                                #
+    # ------------------------------------------------------------------ #
+
+    def extract_all_schemas(
+        self,
+        schema_filter: Optional[List[str]] = None,
+        parallel_workers: int = 5,
+    ) -> DatabaseMetadata:
         """
         Extract metadata for all schemas in the database.
-        If database was not specified in config, extracts from all databases on server.
-        
-        Args:
-            schema_filter: Optional list of schema names to extract. If None, extracts all schemas.
-            
-        Returns:
-            DatabaseMetadata object containing all schemas
+
+        Schemas are extracted in parallel using a ``ThreadPoolExecutor``.
+        Each worker thread opens its own database connection so threads
+        never share state.
+
+        If ``database`` was not specified in the connection config the
+        extractor runs in *server mode* and scans every database on the
+        server, also in parallel.
+
+        Parameters
+        ----------
+        schema_filter : list[str] | None
+            Which schemas to extract.  Accepts exact names, globs
+            (``monkeybook_%``), and ``prefix:``, ``suffix:``,
+            ``contains:``, ``regex:`` markers.  Pass ``None`` to extract
+            everything.
+        parallel_workers : int
+            Maximum number of schemas extracted concurrently.  Defaults
+            to ``5``.  Set to ``1`` for sequential extraction (useful for
+            debugging or connectors that do not support concurrent
+            connections).  The value is automatically capped at the
+            number of schemas being extracted.
+
+        Returns
+        -------
+        DatabaseMetadata
         """
         connector = self._get_connector()
-        
-        # Get database version
         version = connector.get_database_version()
-        
-        # Check if in server mode
         server_mode = hasattr(connector, 'server_mode') and connector.server_mode
-        
+
         if server_mode:
-            # Server mode: database parameter was None, extract from all databases
             logger.info("Server mode: Extracting from all databases on server")
-            
+
             db_metadata = DatabaseMetadata(
                 database_name=f"{connector.host}:{connector.port}",
                 database_type=self.db_type,
                 version=version,
                 host=self.connection_params.get('host'),
-                port=self.connection_params.get('port')
+                port=self.connection_params.get('port'),
             )
-            
-            # Get all databases
-            all_databases = connector.get_schemas()  # In server mode, this returns databases
+
+            all_databases = connector.get_schemas()
             logger.info(f"Found {len(all_databases)} databases on server")
-            
+
             # Filter databases — supports exact names, globs, prefix:/suffix:/regex: markers
             databases_to_extract = self._resolve_schema_filter(schema_filter, all_databases)
-            
-            # Extract each database as a "schema"
-            for db_name in databases_to_extract:
-                try:
-                    logger.info(f"Extracting database: {db_name}")
-                    
-                    # Switch to this database
-                    connector.switch_database(db_name)
-                    
-                    # Get actual schemas in this database
-                    actual_schemas = connector.get_schemas()
-                    
-                    # Create a schema metadata for this database
-                    from .models import SchemaMetadata
-                    db_schema = SchemaMetadata(name=db_name)
-                    
-                    # Extract tables from each schema in this database
-                    for schema_name in actual_schemas:
-                        if schema_name in ['pg_catalog', 'information_schema', 'pg_toast']:
-                            continue
-                        
-                        tables = connector.get_tables(schema_name)
-                        for table_name in tables:
-                            table_metadata = connector.get_table_metadata(schema_name, table_name)
-                            # Prefix table name with schema to avoid conflicts
-                            table_metadata.name = f"{schema_name}.{table_name}"
-                            db_schema.add_table(table_metadata)
-                    
+
+            if not databases_to_extract:
+                logger.warning("No databases matched the schema_filter — returning empty result")
+                return db_metadata
+
+            results = self._run_parallel(
+                self._extract_server_db_worker,
+                databases_to_extract,
+                parallel_workers,
+            )
+
+            for _db_name, db_schema in results:
+                if db_schema is not None:
                     db_metadata.add_schema(db_schema)
-                    logger.info(f"Extracted {len(db_schema.tables)} tables from database: {db_name}")
-                    
-                except Exception as e:
-                    logger.error(f"Error extracting database {db_name}: {e}")
-                    continue
-            
-            logger.info(f"Server extraction complete. Total databases: {len(db_metadata.schemas)}")
+
+            logger.info(
+                f"Server extraction complete.  "
+                f"Total databases: {len(db_metadata.schemas)}"
+            )
             return db_metadata
-        
+
         else:
             # Normal mode: single database specified
             db_metadata = DatabaseMetadata(
@@ -292,26 +399,32 @@ class MetadataExtractor:
                 database_type=self.db_type,
                 version=version,
                 host=self.connection_params.get('host'),
-                port=self.connection_params.get('port')
+                port=self.connection_params.get('port'),
             )
-            
-            # Get all schemas
+
             all_schemas = connector.get_schemas()
             logger.info(f"Found {len(all_schemas)} schemas in database")
-            
+
             # Filter schemas — supports exact names, globs, prefix:/suffix:/regex: markers
             schemas_to_extract = self._resolve_schema_filter(schema_filter, all_schemas)
-            
-            # Extract metadata for each schema
-            for schema_name in schemas_to_extract:
-                try:
-                    schema_metadata = self.extract_schema(schema_name)
+
+            if not schemas_to_extract:
+                logger.warning("No schemas matched the schema_filter — returning empty result")
+                return db_metadata
+
+            results = self._run_parallel(
+                self._extract_schema_worker,
+                schemas_to_extract,
+                parallel_workers,
+            )
+
+            for _schema_name, schema_metadata in results:
+                if schema_metadata is not None:
                     db_metadata.add_schema(schema_metadata)
-                except Exception as e:
-                    logger.error(f"Error extracting schema {schema_name}: {e}")
-                    continue
-            
-            logger.info(f"Extraction complete. Total schemas: {len(db_metadata.schemas)}")
+
+            logger.info(
+                f"Extraction complete.  Total schemas: {len(db_metadata.schemas)}"
+            )
             return db_metadata
     
     def extract_table(self, schema_name: str, table_name: str):
