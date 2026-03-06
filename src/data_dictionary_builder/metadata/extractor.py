@@ -107,55 +107,49 @@ class MetadataExtractor:
                 seen.add(name)
                 matched.append(name)
 
+        # Pre-compile all regex patterns and prepare glob strings once so
+        # the inner loop (over available_schemas) does no repeated work.
+        compiled: list = []
         for entry in schema_filter:
             entry_lower = entry.lower()
-
-            # ── Explicit markers ────────────────────────────────────────
             if entry_lower.startswith("prefix:"):
-                prefix = entry[len("prefix:"):]
-                for s in available_schemas:
-                    if s.lower().startswith(prefix.lower()):
-                        _add(s)
-
+                compiled.append(("prefix", entry[len("prefix:"):].lower()))
             elif entry_lower.startswith("suffix:"):
-                suffix = entry[len("suffix:"):]
-                for s in available_schemas:
-                    if s.lower().endswith(suffix.lower()):
-                        _add(s)
-
+                compiled.append(("suffix", entry[len("suffix:"):].lower()))
             elif entry_lower.startswith("contains:"):
-                substr = entry[len("contains:"):]
-                for s in available_schemas:
-                    if substr.lower() in s.lower():
-                        _add(s)
-
+                compiled.append(("contains", entry[len("contains:"):].lower()))
             elif entry_lower.startswith("regex:"):
-                pattern = entry[len("regex:"):]
-                for s in available_schemas:
-                    if re.fullmatch(pattern, s, re.IGNORECASE):
-                        _add(s)
-
-            # ── Glob / wildcard (_, %, *)  ───────────────────────────────
+                compiled.append(("regex", re.compile(entry[len("regex:"):], re.IGNORECASE)))
             elif any(c in entry for c in ("_", "%", "*", "?")):
-                # Normalise SQL-LIKE wildcards to fnmatch style:
-                #   %  →  *      (any sequence)
-                #   _  →  ?      (any single char)  — only when used as wildcard
-                # We convert % first, then handle _ carefully:
-                # a leading/trailing _ is almost certainly a naming convention
-                # character, not a wildcard; treat _ as a wildcard only when
-                # the entry also contains % or *.
                 glob = entry.replace("%", "*")
                 if "*" in glob:
-                    # entry was SQL-LIKE style — also treat _ as single-char wildcard
                     glob = glob.replace("_", "?")
-                for s in available_schemas:
-                    if fnmatch.fnmatchcase(s.lower(), glob.lower()):
-                        _add(s)
-
-            # ── Exact match (original behaviour) ────────────────────────
+                compiled.append(("glob", glob.lower()))
             else:
-                if entry in available_schemas:
-                    _add(entry)
+                compiled.append(("exact", entry))
+
+        for kind, value in compiled:
+            if kind == "exact":
+                if value in available_schemas:
+                    _add(value)
+            else:
+                for s in available_schemas:
+                    s_lower = s.lower()
+                    if kind == "prefix":
+                        if s_lower.startswith(value):
+                            _add(s)
+                    elif kind == "suffix":
+                        if s_lower.endswith(value):
+                            _add(s)
+                    elif kind == "contains":
+                        if value in s_lower:
+                            _add(s)
+                    elif kind == "regex":
+                        if value.fullmatch(s):
+                            _add(s)
+                    elif kind == "glob":
+                        if fnmatch.fnmatchcase(s_lower, value):
+                            _add(s)
 
         logger.info(
             f"schema_filter {schema_filter!r} matched "

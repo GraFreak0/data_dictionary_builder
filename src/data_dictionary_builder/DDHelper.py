@@ -260,7 +260,6 @@ class DDHelper:
         if output_pdf is not None:
             pdf_path = Path(output_pdf)
         elif source_json is not None:
-            # Mirror the JSON filename in reports/pdf/
             pdf_path = self.report_pdf_path(stem=Path(source_json).stem)
         else:
             pdf_path = self.report_pdf_path()
@@ -299,6 +298,17 @@ class DDHelper:
             "DDBody", parent=styles["Normal"],
             fontSize=9, spaceAfter=3, leading=13,
         )
+        # Cell style: wraps long values within their column boundary.
+        # splitLongWords ensures that even strings without spaces (e.g. long
+        # identifiers) break at the column edge rather than overflowing.
+        cell_style = ParagraphStyle(
+            "DDCell", parent=styles["Normal"],
+            fontSize=8, leading=11, splitLongWords=1, wordWrap="LTR",
+        )
+
+        def _c(text: str) -> Paragraph:
+            """Wrap a cell value so reportlab word-wraps it within its column."""
+            return Paragraph(str(text), cell_style)
 
         def _hdr_style() -> TableStyle:
             return TableStyle([
@@ -309,6 +319,7 @@ class DDHelper:
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, SILVER]),
                 ("FONTSIZE",       (0, 1), (-1, -1), 9),
                 ("GRID",           (0, 0), (-1, -1), 0.5, LGRAY),
+                ("VALIGN",         (0, 0), (-1, -1), "TOP"),
                 ("TOPPADDING",     (0, 0), (-1, -1), 5),
                 ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
                 ("LEFTPADDING",    (0, 0), (-1, -1), 8),
@@ -324,6 +335,7 @@ class DDHelper:
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, SILVER]),
                 ("FONTSIZE",       (0, 1), (-1, -1), 8),
                 ("GRID",           (0, 0), (-1, -1), 0.5, LGRAY),
+                ("VALIGN",         (0, 0), (-1, -1), "TOP"),
                 ("TOPPADDING",     (0, 0), (-1, -1), 4),
                 ("BOTTOMPADDING",  (0, 0), (-1, -1), 4),
                 ("LEFTPADDING",    (0, 0), (-1, -1), 6),
@@ -374,7 +386,7 @@ class DDHelper:
             # Summary table
             story.append(Paragraph("Summary", h2_style))
             sum_rows = [["Metric", "Count"]] + [
-                [label, str(summary.get(key, 0))]
+                [_c(label), _c(str(summary.get(key, 0)))]
                 for label, key in [
                     ("Missing tables",              "missing_tables_count"),
                     ("Missing columns",             "missing_columns_count"),
@@ -383,73 +395,67 @@ class DDHelper:
                     ("Columns without description", "columns_without_descriptions_count"),
                 ]
             ]
-            t = Table(sum_rows, colWidths=[W * 0.75, W * 0.25])
+            t = Table(sum_rows, colWidths=[W * 0.75, W * 0.25], repeatRows=1)
             t.setStyle(_hdr_style())
             story.append(t)
 
-            # Missing tables
+            # Missing tables — all rows, no truncation
             missing_tables = comparison.get("missing_tables", [])
             if missing_tables:
                 story.append(Paragraph(f"Missing Tables ({len(missing_tables)})", h2_style))
                 rows = [["Schema", "Table"]] + [
-                    [str(r.get("schema", "")), str(r.get("table", ""))]
+                    [_c(r.get("schema", "")), _c(r.get("table", ""))]
                     for r in missing_tables
                 ]
-                t = Table(rows, colWidths=[W * 0.35, W * 0.65])
+                t = Table(rows, colWidths=[W * 0.35, W * 0.65], repeatRows=1)
                 t.setStyle(_sub_style())
                 story.append(t)
 
-            # Missing columns
+            # Missing columns — all rows, no truncation
             missing_cols = comparison.get("missing_columns", [])
             if missing_cols:
                 story.append(Paragraph(f"Missing Columns ({len(missing_cols)})", h2_style))
                 rows = [["Schema", "Table", "Column", "Expected Type"]] + [
-                    [str(r.get("schema", "")), str(r.get("table", "")),
-                     str(r.get("column", "")), str(r.get("data_type", ""))]
-                    for r in missing_cols[:100]
+                    [_c(r.get("schema", "")), _c(r.get("table", "")),
+                     _c(r.get("column", "")), _c(r.get("data_type", ""))]
+                    for r in missing_cols
                 ]
-                if len(missing_cols) > 100:
-                    rows.append(["", f"… and {len(missing_cols)-100} more", "", ""])
-                t = Table(rows, colWidths=[W*0.18, W*0.25, W*0.32, W*0.25])
+                t = Table(rows, colWidths=[W*0.18, W*0.25, W*0.32, W*0.25], repeatRows=1)
                 t.setStyle(_sub_style())
                 story.append(t)
 
-            # Type mismatches
+            # Type mismatches — all rows, no truncation
             type_mm = comparison.get("type_mismatches", [])
             if type_mm:
                 story.append(Paragraph(f"Type Mismatches ({len(type_mm)})", h2_style))
                 rows = [["Schema", "Table", "Column", "Source", "Destination"]] + [
-                    [str(r.get("schema", "")), str(r.get("table", "")),
-                     str(r.get("column", "")), str(r.get("source_type", "")),
-                     str(r.get("destination_type", ""))]
+                    [_c(r.get("schema", "")), _c(r.get("table", "")),
+                     _c(r.get("column", "")), _c(r.get("source_type", "")),
+                     _c(r.get("destination_type", ""))]
                     for r in type_mm
                 ]
-                t = Table(rows, colWidths=[W*0.14, W*0.2, W*0.26, W*0.2, W*0.2])
+                t = Table(rows, colWidths=[W*0.14, W*0.2, W*0.26, W*0.2, W*0.2], repeatRows=1)
                 t.setStyle(_sub_style())
                 story.append(t)
 
-            # Documentation gaps — tables
+            # Documentation gaps — tables, all rows, no truncation
             tbl_gaps = yaml_gaps.get("tables_without_descriptions", [])
             if tbl_gaps:
                 story.append(Paragraph(f"Tables Without Descriptions ({len(tbl_gaps)})", h2_style))
-                rows = [["Schema.Table"]] + [[str(g)] for g in tbl_gaps[:60]]
-                if len(tbl_gaps) > 60:
-                    rows.append([f"… and {len(tbl_gaps)-60} more"])
-                t = Table(rows, colWidths=[W])
+                rows = [["Schema.Table"]] + [[_c(g)] for g in tbl_gaps]
+                t = Table(rows, colWidths=[W], repeatRows=1)
                 t.setStyle(_sub_style())
                 story.append(t)
 
-            # Documentation gaps — columns
+            # Documentation gaps — columns, all rows, no truncation
             col_gaps = yaml_gaps.get("columns_without_descriptions", [])
             if col_gaps:
                 story.append(Paragraph(f"Columns Without Descriptions ({len(col_gaps)})", h2_style))
                 rows = [["Schema", "Table", "Column"]] + [
-                    [str(g.get("schema", "")), str(g.get("table", "")), str(g.get("column", ""))]
-                    for g in col_gaps[:60]
+                    [_c(g.get("schema", "")), _c(g.get("table", "")), _c(g.get("column", ""))]
+                    for g in col_gaps
                 ]
-                if len(col_gaps) > 60:
-                    rows.append(["", f"… and {len(col_gaps)-60} more", ""])
-                t = Table(rows, colWidths=[W*0.25, W*0.35, W*0.40])
+                t = Table(rows, colWidths=[W*0.25, W*0.35, W*0.40], repeatRows=1)
                 t.setStyle(_sub_style())
                 story.append(t)
 

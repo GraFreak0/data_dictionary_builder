@@ -15,7 +15,18 @@ logger = logging.getLogger(__name__)
 
 class SchemaComparator:
     """Compares schemas between source and destination databases."""
-    
+
+    # Built once at class load time; reused by every _normalize_data_type call.
+    _TYPE_MAPPINGS = {
+        "integer":                    "int",
+        "int4":                       "int",
+        "int8":                       "bigint",
+        "character varying":          "varchar",
+        "timestamp without time zone":"timestamp",
+        "timestamp with time zone":   "timestamptz",
+        "double precision":           "double",
+    }
+
     def __init__(
         self,
         source_config: Dict[str, Any],
@@ -46,45 +57,68 @@ class SchemaComparator:
     def compare_schemas(
         self,
         source_schema_name: str,
-        destination_schema_name: Optional[str] = None
+        destination_schema_name: Optional[str] = None,
+        dest_db_metadata: Optional[DatabaseMetadata] = None,
     ) -> ComparisonResult:
         """
         Compare schemas between source and destination databases.
-        
+
         Args:
             source_schema_name: Name of the schema in source database
             destination_schema_name: Name of the schema in destination database
                                     (defaults to source_schema_name if not provided)
-            
+            dest_db_metadata: Optional pre-extracted destination DatabaseMetadata.
+                              When provided the destination database is NOT queried —
+                              the matching schema is looked up directly from this
+                              object (re-ingest path).  Useful to avoid redundant
+                              round-trips when the destination data was already
+                              extracted earlier in the same run.
+
         Returns:
             ComparisonResult object with differences
         """
         if destination_schema_name is None:
             destination_schema_name = source_schema_name
-        
+
         logger.info(f"Comparing schemas: {source_schema_name} -> {destination_schema_name}")
-        
-        # Connect to both databases
+
+        # Always extract fresh from the source
         self.source_extractor.connect()
-        self.destination_extractor.connect()
-        
         try:
-            # Extract metadata from both schemas
             source_schema = self.source_extractor.extract_schema(source_schema_name)
-            destination_schema = self.destination_extractor.extract_schema(destination_schema_name)
-            
-            # Perform comparison
-            result = self._compare_schema_metadata(source_schema, destination_schema)
-            
-            logger.info(f"Comparison complete. Found {len(result.missing_tables)} missing tables, "
-                       f"{len(result.missing_columns)} missing columns")
-            
-            return result
-        
         finally:
-            # Disconnect from databases
             self.source_extractor.disconnect()
-            self.destination_extractor.disconnect()
+
+        # Destination: reuse pre-extracted metadata OR query the destination DB
+        if dest_db_metadata is not None:
+            destination_schema = next(
+                (s for s in dest_db_metadata.schemas if s.name == destination_schema_name),
+                None,
+            )
+            if destination_schema is None:
+                raise ValueError(
+                    f"Schema '{destination_schema_name}' not found in the provided "
+                    f"dest_db_metadata (available: "
+                    f"{[s.name for s in dest_db_metadata.schemas]})"
+                )
+            logger.info(
+                f"Destination schema '{destination_schema_name}' reingested from "
+                f"pre-extracted metadata — skipping destination DB query"
+            )
+        else:
+            self.destination_extractor.connect()
+            try:
+                destination_schema = self.destination_extractor.extract_schema(destination_schema_name)
+            finally:
+                self.destination_extractor.disconnect()
+
+        result = self._compare_schema_metadata(source_schema, destination_schema)
+
+        logger.info(
+            f"Comparison complete. Found {len(result.missing_tables)} missing tables, "
+            f"{len(result.missing_columns)} missing columns"
+        )
+        return result
     
     def _compare_schema_metadata(
         self,
@@ -176,93 +210,118 @@ class SchemaComparator:
     def _normalize_data_type(self, data_type: str) -> str:
         """
         Normalize data type for comparison across different database systems.
-        
+
+        Uses the class-level ``_TYPE_MAPPINGS`` constant so the dict is never
+        re-created per call.
+
         Args:
             data_type: Original data type
-            
+
         Returns:
-            Normalized data type
+            Normalized data type string
         """
-        # Convert to lowercase
         normalized = data_type.lower()
-        
-        # Basic normalization rules
-        type_mappings = {
-            'integer': 'int',
-            'int4': 'int',
-            'int8': 'bigint',
-            'character varying': 'varchar',
-            'timestamp without time zone': 'timestamp',
-            'timestamp with time zone': 'timestamptz',
-            'double precision': 'double',
-        }
-        
-        for original, normalized_type in type_mappings.items():
+        for original, mapped in self._TYPE_MAPPINGS.items():
             if original in normalized:
-                return normalized_type
-        
+                return mapped
         return normalized
     
     def compare_and_generate_report(
         self,
         source_schema_name: str,
         destination_schema_name: Optional[str] = None,
-        include_yaml_gaps: bool = True
+        include_yaml_gaps: bool = True,
+        source_db_metadata: Optional[DatabaseMetadata] = None,
+        dest_db_metadata: Optional[DatabaseMetadata] = None,
     ) -> Dict[str, Any]:
         """
         Compare schemas and generate a comprehensive report.
-        
+
         Args:
             source_schema_name: Name of the schema in source database
             destination_schema_name: Name of the schema in destination database
             include_yaml_gaps: Whether to include tables/columns without descriptions
-            
+            source_db_metadata: Optional pre-extracted source DatabaseMetadata.
+                                When provided the source DB is NOT re-queried for
+                                YAML gap analysis — the matching schema is looked up
+                                directly (re-ingest path).
+            dest_db_metadata: Optional pre-extracted destination DatabaseMetadata.
+                              When provided the destination DB is NOT queried for the
+                              schema comparison (re-ingest path).  See compare_schemas()
+                              for details.
+
         Returns:
             Dictionary containing comparison report
         """
-        # Perform comparison
-        comparison_result = self.compare_schemas(source_schema_name, destination_schema_name)
-        
-        report = {
+        # ── Schema comparison ─────────────────────────────────────────────
+        comparison_result = self.compare_schemas(
+            source_schema_name,
+            destination_schema_name,
+            dest_db_metadata=dest_db_metadata,
+        )
+
+        report: Dict[str, Any] = {
             'comparison': comparison_result.to_dict(),
             'summary': {
                 'missing_tables_count': len(comparison_result.missing_tables),
                 'missing_columns_count': len(comparison_result.missing_columns),
                 'type_mismatches_count': len(comparison_result.type_mismatches),
-            }
+            },
         }
-        
-        # Add YAML gaps if requested
+
+        # ── YAML gap detection ────────────────────────────────────────────
         if include_yaml_gaps:
-            # Extract source metadata for YAML analysis
-            self.source_extractor.connect()
-            try:
-                source_db_metadata = DatabaseMetadata(
-                    database_name=self.source_config.get('database', 'source'),
-                    database_type=self.source_config['db_type']
+            if source_db_metadata is not None:
+                # Reuse pre-extracted metadata — no extra DB round-trip
+                src_schema_obj = next(
+                    (s for s in source_db_metadata.schemas if s.name == source_schema_name),
+                    None,
                 )
-                source_schema = self.source_extractor.extract_schema(source_schema_name)
-                source_db_metadata.add_schema(source_schema)
-                
-                # Find tables and columns without descriptions
-                tables_without_desc = self.yaml_generator.get_tables_without_descriptions(source_db_metadata)
-                columns_without_desc = self.yaml_generator.get_columns_without_descriptions(source_db_metadata)
-                
-                comparison_result.tables_without_descriptions = tables_without_desc
-                comparison_result.columns_without_descriptions = columns_without_desc
-                
-                report['yaml_gaps'] = {
-                    'tables_without_descriptions': tables_without_desc,
-                    'columns_without_descriptions': columns_without_desc,
-                    'tables_without_descriptions_count': len(tables_without_desc),
-                    'columns_without_descriptions_count': len(columns_without_desc)
-                }
-                report['summary']['tables_without_descriptions_count'] = len(tables_without_desc)
-                report['summary']['columns_without_descriptions_count'] = len(columns_without_desc)
-            
-            finally:
-                self.source_extractor.disconnect()
-        
+                if src_schema_obj is None:
+                    logger.warning(
+                        f"Schema '{source_schema_name}' not found in source_db_metadata "
+                        f"— skipping YAML gap detection"
+                    )
+                    return report
+
+                gap_metadata = DatabaseMetadata(
+                    database_name=source_db_metadata.database_name,
+                    database_type=source_db_metadata.database_type,
+                )
+                gap_metadata.add_schema(src_schema_obj)
+                logger.info(
+                    f"YAML gap analysis for '{source_schema_name}' using "
+                    f"pre-extracted source metadata — skipping source DB query"
+                )
+            else:
+                # Fall back to a fresh source extraction
+                self.source_extractor.connect()
+                try:
+                    gap_metadata = DatabaseMetadata(
+                        database_name=self.source_config.get('database', 'source'),
+                        database_type=self.source_config['db_type'],
+                    )
+                    gap_metadata.add_schema(
+                        self.source_extractor.extract_schema(source_schema_name)
+                    )
+                finally:
+                    self.source_extractor.disconnect()
+
+            tables_without_desc  = self.yaml_generator.get_tables_without_descriptions(gap_metadata)
+            columns_without_desc = self.yaml_generator.get_columns_without_descriptions(gap_metadata)
+
+            comparison_result.tables_without_descriptions  = tables_without_desc
+            comparison_result.columns_without_descriptions = columns_without_desc
+
+            report['yaml_gaps'] = {
+                'tables_without_descriptions':        tables_without_desc,
+                'columns_without_descriptions':       columns_without_desc,
+                'tables_without_descriptions_count':  len(tables_without_desc),
+                'columns_without_descriptions_count': len(columns_without_desc),
+            }
+            report['summary']['tables_without_descriptions_count']  = len(tables_without_desc)
+            report['summary']['columns_without_descriptions_count'] = len(columns_without_desc)
+
         return report
     
     def extract_and_compare_all(

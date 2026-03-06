@@ -5,7 +5,7 @@ ClickHouse database connector implementation.
 from clickhouse_driver import Client
 from typing import List, Optional, Dict, Any
 from .base import BaseConnector
-from ..metadata.models import TableMetadata, ColumnMetadata
+from ..metadata.models import SchemaMetadata, TableMetadata, ColumnMetadata
 
 
 class ClickHouseConnector(BaseConnector):
@@ -242,10 +242,103 @@ class ClickHouseConnector(BaseConnector):
         
         return table_metadata
     
+    def extract_schema_metadata(self, schema_name: str) -> SchemaMetadata:
+        """
+        Bulk-optimised schema extraction for ClickHouse.
+
+        Fetches all table info and all column info for the entire schema in
+        **2 queries** instead of the base-class default of 3 queries per table
+        (system.tables for metadata + system.tables for PKs + system.columns).
+        For a schema with N tables this reduces round-trips from 3N → 2.
+
+        Args:
+            schema_name: ClickHouse database name to extract.
+
+        Returns:
+            SchemaMetadata populated with all tables and columns.
+        """
+        # ── Query 1: all tables (engine, comment, row count, primary key) ──
+        tables_result = self.connection.execute(
+            """
+            SELECT name, engine, comment, total_rows, primary_key
+            FROM system.tables
+            WHERE database = %(db)s
+              AND engine NOT IN ('View', 'MaterializedView')
+            ORDER BY name
+            """,
+            {"db": schema_name},
+        )
+
+        if not tables_result:
+            return SchemaMetadata(name=schema_name)
+
+        tables_info: Dict[str, Dict[str, Any]] = {}
+        for name, engine, comment, total_rows, pk_str in tables_result:
+            pk_list: List[str] = []
+            if pk_str:
+                pk_list = [p.strip() for p in pk_str.strip("()").split(",") if p.strip()]
+            tables_info[name] = {
+                "engine":       engine,
+                "comment":      comment or None,
+                "total_rows":   total_rows,
+                "primary_keys": pk_list,
+            }
+
+        # ── Query 2: all columns for every table in one round-trip ──────────
+        columns_result = self.connection.execute(
+            """
+            SELECT table, name, type, default_kind, default_expression,
+                   comment, position
+            FROM system.columns
+            WHERE database = %(db)s
+              AND table IN %(tables)s
+            ORDER BY table, position
+            """,
+            {"db": schema_name, "tables": tuple(tables_info.keys())},
+        )
+
+        # Group column rows by table name
+        cols_by_table: Dict[str, list] = {t: [] for t in tables_info}
+        for row in columns_result:
+            tbl = row[0]
+            if tbl in cols_by_table:
+                cols_by_table[tbl].append(row)
+
+        # ── Build SchemaMetadata in-memory ───────────────────────────────────
+        schema_metadata = SchemaMetadata(name=schema_name)
+
+        for table_name, tinfo in tables_info.items():
+            pk_set = set(tinfo["primary_keys"])
+            table_metadata = TableMetadata(
+                name=table_name,
+                schema_name=schema_name,
+                table_type=f'BASE TABLE ({tinfo["engine"]})',
+                description=tinfo["comment"],
+                row_count=tinfo["total_rows"],
+            )
+            table_metadata.primary_keys = tinfo["primary_keys"]
+
+            for _, col_name, col_type, default_kind, default_expr, col_comment, position in cols_by_table.get(table_name, []):
+                is_nullable = "Nullable" in col_type
+                data_type = col_type.replace("Nullable(", "").rstrip(")") if is_nullable else col_type
+                table_metadata.add_column(ColumnMetadata(
+                    name=col_name,
+                    data_type=data_type,
+                    is_nullable=is_nullable,
+                    is_primary_key=col_name in pk_set,
+                    default_value=default_expr if default_kind else None,
+                    description=col_comment or None,
+                    ordinal_position=position,
+                ))
+
+            schema_metadata.add_table(table_metadata)
+
+        return schema_metadata
+
     def get_database_version(self) -> Optional[str]:
         """
         Get ClickHouse version.
-        
+
         Returns:
             ClickHouse version string
         """

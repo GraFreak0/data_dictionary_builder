@@ -6,7 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from typing import List, Optional, Dict, Any
 from .base import BaseConnector
-from ..metadata.models import TableMetadata, ColumnMetadata
+from ..metadata.models import SchemaMetadata, TableMetadata, ColumnMetadata
 
 
 class PostgresConnector(BaseConnector):
@@ -313,10 +313,168 @@ class PostgresConnector(BaseConnector):
         cursor.close()
         return table_metadata
     
+    def extract_schema_metadata(self, schema_name: str) -> SchemaMetadata:
+        """
+        Bulk-optimised schema extraction for PostgreSQL.
+
+        Executes **5 queries** that each cover the entire schema, then
+        assembles the result in-memory.  The base-class default issues
+        4 separate queries per table (columns, PKs, FKs, row count), so for
+        a schema with N tables this reduces round-trips from 4N → 5.
+
+        Args:
+            schema_name: PostgreSQL schema to extract.
+
+        Returns:
+            SchemaMetadata populated with all tables and columns.
+        """
+        cursor = self.connection.cursor(cursor_factory=RealDictCursor)
+
+        # ── Query 1: all base tables + pg_class descriptions ────────────────
+        cursor.execute(
+            """
+            SELECT t.table_name,
+                   obj_description(c.oid) AS description
+            FROM information_schema.tables t
+            LEFT JOIN pg_class c
+                   ON c.relname = t.table_name
+                  AND c.relnamespace = (
+                          SELECT oid FROM pg_namespace WHERE nspname = %s)
+            WHERE t.table_schema = %s
+              AND t.table_type = 'BASE TABLE'
+            ORDER BY t.table_name
+            """,
+            (schema_name, schema_name),
+        )
+        tables_rows = cursor.fetchall()
+
+        if not tables_rows:
+            cursor.close()
+            return SchemaMetadata(name=schema_name)
+
+        table_names = [r["table_name"] for r in tables_rows]
+
+        # ── Query 2: all columns for the whole schema ────────────────────────
+        cursor.execute(
+            """
+            SELECT table_name, column_name, data_type, is_nullable,
+                   column_default, character_maximum_length,
+                   numeric_precision, numeric_scale, ordinal_position
+            FROM information_schema.columns
+            WHERE table_schema = %s
+              AND table_name = ANY(%s)
+            ORDER BY table_name, ordinal_position
+            """,
+            (schema_name, table_names),
+        )
+        cols_by_table: Dict[str, list] = {}
+        for row in cursor.fetchall():
+            cols_by_table.setdefault(row["table_name"], []).append(row)
+
+        # ── Query 3: all primary keys across all tables ──────────────────────
+        cursor.execute(
+            """
+            SELECT t.relname AS table_name, a.attname AS column_name
+            FROM pg_index i
+            JOIN pg_attribute a ON a.attrelid = i.indrelid
+                                AND a.attnum = ANY(i.indkey)
+            JOIN pg_class t     ON t.oid = i.indrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            WHERE n.nspname = %s
+              AND t.relname = ANY(%s)
+              AND i.indisprimary
+            """,
+            (schema_name, table_names),
+        )
+        pks_by_table: Dict[str, set] = {}
+        for row in cursor.fetchall():
+            pks_by_table.setdefault(row["table_name"], set()).add(row["column_name"])
+
+        # ── Query 4: all foreign keys across all tables ──────────────────────
+        cursor.execute(
+            """
+            SELECT tc.table_name,
+                   kcu.column_name,
+                   ccu.table_name  AS referenced_table,
+                   ccu.column_name AS referenced_column
+            FROM information_schema.table_constraints AS tc
+            JOIN information_schema.key_column_usage AS kcu
+                ON tc.constraint_name = kcu.constraint_name
+               AND tc.table_schema   = kcu.table_schema
+            JOIN information_schema.constraint_column_usage AS ccu
+                ON ccu.constraint_name = tc.constraint_name
+               AND ccu.table_schema   = tc.table_schema
+            WHERE tc.constraint_type = 'FOREIGN KEY'
+              AND tc.table_schema = %s
+              AND tc.table_name   = ANY(%s)
+            """,
+            (schema_name, table_names),
+        )
+        fks_by_table: Dict[str, Dict[str, Any]] = {}
+        for row in cursor.fetchall():
+            fks_by_table.setdefault(row["table_name"], {})[row["column_name"]] = row
+
+        # ── Query 5: approximate row counts via pg_class ─────────────────────
+        cursor.execute(
+            """
+            SELECT c.relname AS table_name, c.reltuples::bigint AS estimate
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = %s
+              AND c.relname = ANY(%s)
+              AND c.relkind = 'r'
+            """,
+            (schema_name, table_names),
+        )
+        row_counts: Dict[str, int] = {r["table_name"]: r["estimate"] for r in cursor.fetchall()}
+
+        cursor.close()
+
+        # ── Build SchemaMetadata in-memory ───────────────────────────────────
+        schema_metadata = SchemaMetadata(name=schema_name)
+
+        for trow in tables_rows:
+            table_name = trow["table_name"]
+            pk_set  = pks_by_table.get(table_name, set())
+            fk_map  = fks_by_table.get(table_name, {})
+
+            table_metadata = TableMetadata(
+                name=table_name,
+                schema_name=schema_name,
+                table_type="BASE TABLE",
+                description=trow.get("description"),
+                row_count=row_counts.get(table_name),
+            )
+            table_metadata.primary_keys = list(pk_set)
+
+            for col_info in cols_by_table.get(table_name, []):
+                col_name = col_info["column_name"]
+                column = ColumnMetadata(
+                    name=col_name,
+                    data_type=col_info["data_type"],
+                    is_nullable=col_info["is_nullable"] == "YES",
+                    is_primary_key=col_name in pk_set,
+                    default_value=col_info["column_default"],
+                    character_maximum_length=col_info["character_maximum_length"],
+                    numeric_precision=col_info["numeric_precision"],
+                    numeric_scale=col_info["numeric_scale"],
+                    ordinal_position=col_info["ordinal_position"],
+                )
+                if col_name in fk_map:
+                    fk = fk_map[col_name]
+                    column.is_foreign_key = True
+                    column.foreign_key_table  = fk["referenced_table"]
+                    column.foreign_key_column = fk["referenced_column"]
+                table_metadata.add_column(column)
+
+            schema_metadata.add_table(table_metadata)
+
+        return schema_metadata
+
     def get_database_version(self) -> Optional[str]:
         """
         Get PostgreSQL version.
-        
+
         Returns:
             PostgreSQL version string
         """
