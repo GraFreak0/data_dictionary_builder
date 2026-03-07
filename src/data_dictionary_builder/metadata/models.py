@@ -131,14 +131,14 @@ class DatabaseMetadata:
     def add_schema(self, schema: SchemaMetadata) -> None:
         """Add a schema to the database."""
         self.schemas.append(schema)
-    
+
     def get_schema(self, schema_name: str) -> Optional[SchemaMetadata]:
         """Get a schema by name."""
         for schema in self.schemas:
             if schema.name == schema_name:
                 return schema
         return None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert database metadata to dictionary."""
         return {
@@ -150,6 +150,76 @@ class DatabaseMetadata:
             "port": self.port,
             "extraction_timestamp": self.extraction_timestamp.isoformat(),
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DatabaseMetadata":
+        """
+        Reconstruct a ``DatabaseMetadata`` instance from a plain dictionary.
+
+        This is the inverse of :meth:`to_dict` and is intended for deserialising
+        objects that were serialised for Airflow XCom, JSON storage, or
+        inter-process transfer.
+
+        Parameters
+        ----------
+        data : dict
+            Dictionary as produced by :meth:`to_dict`.
+
+        Returns
+        -------
+        DatabaseMetadata
+        """
+        ts_raw = data.get("extraction_timestamp")
+        try:
+            ts = datetime.fromisoformat(ts_raw) if ts_raw else datetime.now()
+        except (ValueError, TypeError):
+            ts = datetime.now()
+
+        instance = cls(
+            database_name=data["database_name"],
+            database_type=data["database_type"],
+            version=data.get("version"),
+            host=data.get("host"),
+            port=data.get("port"),
+            extraction_timestamp=ts,
+        )
+
+        for schema_data in data.get("schemas", []):
+            schema = SchemaMetadata(
+                name=schema_data["name"],
+                description=schema_data.get("description"),
+                owner=schema_data.get("owner"),
+            )
+            for table_data in schema_data.get("tables", []):
+                table = TableMetadata(
+                    name=table_data["name"],
+                    schema_name=table_data["schema_name"],
+                    table_type=table_data.get("table_type", "BASE TABLE"),
+                    description=table_data.get("description"),
+                    row_count=table_data.get("row_count"),
+                    primary_keys=table_data.get("primary_keys", []),
+                    indexes=table_data.get("indexes", []),
+                )
+                for col_data in table_data.get("columns", []):
+                    table.add_column(ColumnMetadata(
+                        name=col_data["name"],
+                        data_type=col_data["data_type"],
+                        is_nullable=col_data.get("is_nullable", True),
+                        is_primary_key=col_data.get("is_primary_key", False),
+                        is_foreign_key=col_data.get("is_foreign_key", False),
+                        foreign_key_table=col_data.get("foreign_key_table"),
+                        foreign_key_column=col_data.get("foreign_key_column"),
+                        default_value=col_data.get("default_value"),
+                        character_maximum_length=col_data.get("character_maximum_length"),
+                        numeric_precision=col_data.get("numeric_precision"),
+                        numeric_scale=col_data.get("numeric_scale"),
+                        description=col_data.get("description"),
+                        ordinal_position=col_data.get("ordinal_position", 0),
+                    ))
+                schema.add_table(table)
+            instance.add_schema(schema)
+
+        return instance
 
 
 @dataclass

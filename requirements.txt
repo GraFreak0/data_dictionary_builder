@@ -1,6 +1,7 @@
 # Core dependencies
 PyYAML>=6.0.1
 python-dotenv>=1.0.0
+click>=8.0.0
 
 # Database connectors
 psycopg2-binary>=2.9.9  # PostgreSQL
@@ -10,6 +11,9 @@ google-cloud-spanner>=3.40.0  # Google Cloud Spanner
 
 # Email functionality
 secure-smtplib>=0.1.1
+
+# PDF report generation (DDHelper)
+reportlab>=4.0.0
 
 # Data validation and modeling
 pydantic>=2.5.0

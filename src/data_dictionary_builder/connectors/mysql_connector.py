@@ -12,32 +12,37 @@ from ..metadata.models import TableMetadata, ColumnMetadata
 class MySQLConnector(BaseConnector):
     """Connector for MySQL databases."""
     
-    def __init__(self, host: str, port: int, database: str, user: str, password: str, **kwargs):
+    def __init__(self, host: str, port: int, database: str = None, user: str = None, password: str = None, **kwargs):
         """
         Initialize MySQL connector.
         
         Args:
             host: Database host
             port: Database port
-            database: Database name
+            database: Database name (optional - if not provided, connects to all databases on server)
             user: Username
             password: Password
             **kwargs: Additional connection parameters
         """
+        # If no database specified, connect to 'mysql' (default database)
+        connect_database = database if database else 'mysql'
+        
         super().__init__(
             host=host,
             port=port,
-            database=database,
+            database=connect_database,
             user=user,
             password=password,
             **kwargs
         )
         self.host = host
         self.port = port
-        self.database = database
+        self.database = database  # Store original (may be None)
+        self.connect_database = connect_database  # For connection
         self.user = user
         self.password = password
         self.db_type = "mysql"
+        self.server_mode = database is None  # Flag to indicate server-level extraction
     
     def connect(self) -> None:
         """Establish connection to MySQL database."""
@@ -45,7 +50,7 @@ class MySQLConnector(BaseConnector):
             self.connection = pymysql.connect(
                 host=self.host,
                 port=self.port,
-                database=self.database,
+                database=self.connect_database,
                 user=self.user,
                 password=self.password,
                 charset='utf8mb4',
@@ -62,23 +67,52 @@ class MySQLConnector(BaseConnector):
             self.connection.close()
             self.connection = None
     
+    def switch_database(self, database_name: str) -> None:
+        """
+        Switch to a different database on the same server.
+        
+        Args:
+            database_name: Name of the database to switch to
+        """
+        if self.server_mode:
+            # Close current connection
+            if self.connection:
+                self.connection.close()
+            
+            # Update database and reconnect
+            self.connect_database = database_name
+            self.connect()
+    
     def get_schemas(self) -> List[str]:
         """
         Get list of all schemas (databases) in MySQL.
+        If in server mode, returns all databases on server.
         
         Returns:
             List of schema names
         """
         cursor = self.connection.cursor()
-        cursor.execute("""
-            SELECT SCHEMA_NAME 
-            FROM information_schema.SCHEMATA 
-            WHERE SCHEMA_NAME NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
-            ORDER BY SCHEMA_NAME
-        """)
+        
+        if self.server_mode:
+            # Get all databases on the server (excluding system databases)
+            cursor.execute("""
+                SELECT SCHEMA_NAME 
+                FROM information_schema.SCHEMATA 
+                WHERE SCHEMA_NAME NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+                ORDER BY SCHEMA_NAME
+            """)
+        else:
+            # Get schemas in the specified database (MySQL: database = schema)
+            cursor.execute("""
+                SELECT SCHEMA_NAME 
+                FROM information_schema.SCHEMATA 
+                WHERE SCHEMA_NAME NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+                ORDER BY SCHEMA_NAME
+            """)
+        
         schemas = [row['SCHEMA_NAME'] for row in cursor.fetchall()]
         cursor.close()
-        return schemas if schemas else [self.database]
+        return schemas if schemas else ([self.database] if not self.server_mode else [])
     
     def get_tables(self, schema_name: str) -> List[str]:
         """

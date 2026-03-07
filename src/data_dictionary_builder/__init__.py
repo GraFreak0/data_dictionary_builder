@@ -7,6 +7,8 @@ from .metadata.models import DatabaseMetadata, SchemaMetadata, TableMetadata, Co
 from .yaml_generator.generator import YAMLGenerator
 from .comparison.comparator import SchemaComparator
 from .notifications.email_sender import EmailSender
+from .DDHelper import DDHelper
+from .timer import ExecutionTimer
 
 __version__ = "1.0.0"
 __all__ = [
@@ -18,4 +20,6 @@ __all__ = [
     "YAMLGenerator",
     "SchemaComparator",
     "EmailSender",
+    "DDHelper",
+    "ExecutionTimer",
 ]
