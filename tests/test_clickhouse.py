@@ -12,7 +12,7 @@ Configuration (.env or environment variables)
 ---------------------------------------------
 Shared / fallback:
     clickhouse_host      default: localhost
-    clickhouse_port      default: 9440
+    clickhouse_port      default: 8123
     clickhouse_user
     clickhouse_password
     clickhouse_db        optional – omit to scan all databases on the server
@@ -57,7 +57,7 @@ EMAIL_TO  = "j_oyin@yahoo.com"
 
 # ── Shared / fallback connection values ─────────────────────────────────────
 _CH_HOST     = os.getenv("clickhouse_host", "localhost")
-_CH_PORT     = int(os.getenv("clickhouse_port", 9440))
+_CH_PORT     = int(os.getenv("clickhouse_port", 8123))
 _CH_USER     = os.getenv("clickhouse_user", "default")
 _CH_PASSWORD = os.getenv("clickhouse_password", "")
 _CH_DB       = os.getenv("clickhouse_db")          # None → server mode

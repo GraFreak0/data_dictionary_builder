@@ -1,116 +1,169 @@
-# Database Metadata Generator
+# data_dictionary_builder
 
-A Python library for extracting database metadata and generating dbt-compatible YAML files with schema comparison capabilities.
+A Python library that automates database documentation — extract live schema metadata, generate dbt-compatible YAML, compare schemas across environments, and deliver PDF reports, all in a single import.
 
-## Features
+[![PyPI](https://img.shields.io/pypi/v/data-dictionary-builder)](https://pypi.org/project/data-dictionary-builder/)
+[![Python](https://img.shields.io/pypi/pyversions/data-dictionary-builder)](https://pypi.org/project/data-dictionary-builder/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-- Connect to multiple database types (SQLite, PostgreSQL, MySQL, ClickHouse, Spanner)
-- Extract complete schema metadata (tables, columns, data types, constraints)
-- Generate dbt-compatible YAML files (one per schema)
-- Compare source and destination database schemas
-- Email reporting for schema differences and missing descriptions
-- Airflow-compatible design for orchestration
-
-## Project Structure
-
-```
-data_dictionary_builder/
-├── README.md
-├── requirements.txt
-├── setup.py
-├── src/
-│   ├── __init__.py
-│   ├── connectors/
-│   │   ├── __init__.py
-│   │   ├── base.py
-│   │   ├── sqlite_connector.py
-│   │   ├── postgres_connector.py
-│   │   ├── mysql_connector.py
-│   │   ├── clickhouse_connector.py
-│   │   └── spanner_connector.py
-│   ├── metadata/
-│   │   ├── __init__.py
-│   │   ├── extractor.py
-│   │   └── models.py
-│   ├── yaml_generator/
-│   │   ├── __init__.py
-│   │   └── generator.py
-│   ├── comparison/
-│   │   ├── __init__.py
-│   │   └── comparator.py
-│   └── notifications/
-│       ├── __init__.py
-│       └── email_sender.py
-├── examples/
-│   ├── airflow_dag_example.py
-│   └── standalone_usage.py
-└── tests/
-    └── __init__.py
-```
+---
 
 ## Installation
 
 ```bash
-pip install -r requirements.txt
-pip install -e .
+# Core library (SQLite works out of the box)
+pip install data-dictionary-builder
+
+# With the connectors you need
+pip install "data-dictionary-builder[postgres]"
+pip install "data-dictionary-builder[mysql]"
+pip install "data-dictionary-builder[clickhouse]"
+pip install "data-dictionary-builder[spanner]"
+
+# Everything at once
+pip install "data-dictionary-builder[all]"
 ```
 
-## Usage
+Or use the CLI to install connectors after the fact:
 
-### Basic Usage
+```bash
+ddgen install postgres
+ddgen install clickhouse
+ddgen install all
+```
+
+---
+
+## Supported Databases
+
+| Database | Extra | Driver |
+|---|---|---|
+| **SQLite** | *(built-in)* | `sqlite3` (stdlib) |
+| **PostgreSQL** | `[postgres]` | `psycopg2-binary` |
+| **MySQL / MariaDB** | `[mysql]` | `PyMySQL` |
+| **ClickHouse** | `[clickhouse]` | `clickhouse-connect` (HTTP/HTTPS) |
+| **Google Cloud Spanner** | `[spanner]` | `google-cloud-spanner` |
+
+---
+
+## Quick Start
 
 ```python
-from data_dictionary_builder import MetadataExtractor, YAMLGenerator
+from data_dictionary_builder import MetadataExtractor, YAMLGenerator, DDHelper, ExecutionTimer
 
-# Extract metadata
-extractor = MetadataExtractor(
-    db_type='postgres',
-    host='localhost',
-    port=5432,
-    database='mydb',
-    user='user',
-    password='pass'
-)
+timer  = ExecutionTimer()
+helper = DDHelper(".")      # creates models/, reports/json/, reports/pdf/
 
-metadata = extractor.extract_all_schemas()
+with timer.task("Extract"):
+    with MetadataExtractor(
+        db_type="postgres", host="localhost", port=5432,
+        database="mydb", user="readonly", password="secret",
+    ) as ext:
+        db_meta = ext.extract_all_schemas(
+            schema_filter=["public", "analytics"],
+            parallel_workers=8,
+        )
 
-# Generate YAML files
-generator = YAMLGenerator(output_dir='./models')
-generator.generate_yaml_files(metadata)
+with timer.task("Generate YAML"):
+    YAMLGenerator(output_dir=str(helper.models_dir)).generate_yaml_files(db_meta)
+
+timer.summary()
 ```
 
-### With Schema Comparison
+---
+
+## CLI
+
+```bash
+# Check which connectors are installed
+ddgen connectors
+
+# Install a connector
+ddgen install postgres
+ddgen install clickhouse
+ddgen install all
+
+# Show library version and connector summary
+ddgen info
+
+# Show version number
+ddgen --version
+```
+
+---
+
+## Schema Comparison
 
 ```python
-from data_dictionary_builder import SchemaComparator
+from data_dictionary_builder import SchemaComparator, DDHelper
 
-comparator = SchemaComparator(
-    source_config={...},
-    destination_config={...},
-    yaml_output_dir='./models'
-)
+helper = DDHelper(".")
+report = SchemaComparator(
+    source_config={"db_type": "postgres", "host": "prod-db", ...},
+    destination_config={"db_type": "postgres", "host": "staging-db", ...},
+).compare_and_generate_report("public", include_yaml_gaps=True)
 
-report = comparator.compare_and_report(
-    email_to='team@example.com',
-    smtp_config={...}
-)
+json_path = helper.save_report(report)
+pdf_path  = helper.compile_pdf(source_json=json_path)
+helper.send_report_email(report=report, pdf_path=pdf_path, email_to="team@example.com")
 ```
+
+---
 
 ## Airflow Integration
 
-See `examples/airflow_dag_example.py` for complete DAG implementation.
+`DatabaseMetadata` serialises to/from plain dicts for XCom:
 
-## Configuration
+```python
+@task
+def extract():
+    with MetadataExtractor(**config) as ext:
+        return ext.extract_all_schemas(parallel_workers=8).to_dict()
 
-Database connection configurations should include:
-- `db_type`: sqlite, postgres, mysql, clickhouse, spanner
-- `host`: Database host
-- `port`: Database port
-- `database`: Database name
-- `user`: Username
-- `password`: Password
-- Additional driver-specific parameters
+@task
+def generate_yaml(db_meta_dict):
+    from data_dictionary_builder import DatabaseMetadata, YAMLGenerator
+    YAMLGenerator("./models").generate_yaml_files(DatabaseMetadata.from_dict(db_meta_dict))
+```
+
+See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complete DAG.
+
+---
+
+## Key Features
+
+- **Parallel extraction** — `ThreadPoolExecutor` with configurable workers; ClickHouse uses 2 queries and PostgreSQL uses 5 queries per schema regardless of table count
+- **Schema filtering** — exact, glob, prefix, suffix, contains, regex — mix freely
+- **Smart YAML merge** — re-running never overwrites descriptions you've written by hand
+- **Cross-database comparison** — compare any two database types; type aliases normalised before diffing
+- **PDF reports** — paginated, no row limits, table of contents (requires `reportlab`)
+- **Email delivery** — SMTP with env-var credential fallback; PDF attached automatically
+- **ExecutionTimer** — named task timing with a formatted summary table
+- **Server mode** — omit `database` to scan all databases on a MySQL, ClickHouse, or PostgreSQL server
+
+---
+
+## Environment Variables
+
+Set these in a `.env` file (see `tests/.env.example`) or in your shell:
+
+```bash
+# SMTP — used by DDHelper.send_report_email() when no credentials are passed explicitly
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=xxxx xxxx xxxx xxxx
+EMAIL_TO=recipient@example.com
+```
+
+---
+
+## Documentation
+
+Full user guide, API reference, and troubleshooting: [DOCUMENTATION.md](DOCUMENTATION.md)
+
+---
 
 ## License
 
-MIT License
+[MIT](LICENSE) — free to use, modify, and distribute in personal and commercial projects.
