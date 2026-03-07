@@ -23,7 +23,7 @@ jobs:
           destination_branch: main
           pr_title: "Dev → Main Sync"
           pr_body: "Auto PR created after updates to dev."
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.PAT_TOKEN }}
           pr_reviewer: grafreak0
           pr_label: |
             automated
