@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "data-dictionary-builder"
+version = "1.0.0"
+description = "Extract database metadata, generate dbt-compatible YAML, compare schemas, and deliver reports — all in a single Python import."
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Isaiah Johnson", email = "d8aguy@mail.com"}
+]
+keywords = ["database", "metadata", "dbt", "yaml", "data-engineering", "schema", "documentation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+# Core dependencies — always installed
+dependencies = [
+    "PyYAML>=6.0.1",
+    "python-dotenv>=1.0.0",
+    "click>=8.0.0",
+    "typing-extensions>=4.9.0",
+    "python-dateutil>=2.8.2",
+    "colorlog>=6.8.0",
+]
+
+[project.optional-dependencies]
+# Database connectors — install only what you need
+postgres    = ["psycopg2-binary>=2.9.9"]
+mysql       = ["PyMySQL>=1.1.0"]
+clickhouse  = ["clickhouse-driver>=0.2.6"]
+spanner     = ["google-cloud-spanner>=3.40.0"]
+
+# Reporting
+pdf         = ["reportlab>=4.0.0"]
+email       = ["secure-smtplib>=0.1.1"]
+
+# Install everything
+all = [
+    "psycopg2-binary>=2.9.9",
+    "PyMySQL>=1.1.0",
+    "clickhouse-driver>=0.2.6",
+    "google-cloud-spanner>=3.40.0",
+    "reportlab>=4.0.0",
+    "secure-smtplib>=0.1.1",
+]
+
+# Development tools
+dev = [
+    "pytest>=7.4.3",
+    "black>=23.12.0",
+    "flake8>=6.1.0",
+    "mypy>=1.7.1",
+]
+
+[project.urls]
+Homepage    = "https://github.com/GraFreak0/data_dictionary_builder"
+Repository  = "https://github.com/GraFreak0/data_dictionary_builder"
+Issues      = "https://github.com/GraFreak0/data_dictionary_builder/issues"
+
+[project.scripts]
+db-metadata-gen = "data_dictionary_builder.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
