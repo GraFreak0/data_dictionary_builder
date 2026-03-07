@@ -75,7 +75,7 @@ extractor = MetadataExtractor(
 metadata = extractor.extract_all_schemas()
 
 # Generate YAML files
-generator = YAMLGenerator(output_dir='./dbt_models')
+generator = YAMLGenerator(output_dir='./models')
 generator.generate_yaml_files(metadata)
 ```
 
@@ -87,7 +87,7 @@ from data_dictionary_builder import SchemaComparator
 comparator = SchemaComparator(
     source_config={...},
     destination_config={...},
-    yaml_output_dir='./dbt_models'
+    yaml_output_dir='./models'
 )
 
 report = comparator.compare_and_report(
@@ -113,4 +113,4 @@ Database connection configurations should include:
 
 ## License
 
-MIT
+MIT License
