@@ -14,18 +14,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Create Pull Request
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr create \
-            --base main \
-            --head dev \
-            --title "Dev → Main Sync" \
-            --body "Auto PR created after updates to dev." \
-            --reviewer grafreak0 \
-            --label automated \
-            --label dev-to-main || echo "PR already exists"
+      - name: Create PR
+        uses: repo-sync/pull-request@v2
+        with:
+          source_branch: dev
+          destination_branch: main
+          pr_title: "Dev → Main Sync"
+          pr_body: "Auto PR created after updates to dev."
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reviewers: grafreak0
