@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data-dictionary-builder"
-version = "1.0.1"
+version = "1.0.2"
 description = "Extract database metadata, generate dbt-compatible YAML, compare schemas, and deliver reports — all in a single Python import."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -28,38 +28,51 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 
-# Core dependencies — always installed
+# ── Core + all connectors installed by default ────────────────────────────────
+# A plain `pip install data-dictionary-builder` gives you everything.
+# Use the optional extras below if you want a minimal install.
 dependencies = [
+    # Core utilities
     "PyYAML>=6.0.1",
     "python-dotenv>=1.0.0",
     "click>=8.0.0",
     "typing-extensions>=4.9.0",
     "python-dateutil>=2.8.2",
     "colorlog>=6.8.0",
+    # Database connectors
+    "psycopg2-binary>=2.9.9",
+    "PyMySQL>=1.1.0",
+    "clickhouse-connect>=0.7.0",
+    "google-cloud-spanner>=3.40.0",
+    # Reporting & email
+    "reportlab>=4.0.0",
+    "secure-smtplib>=0.1.1",
 ]
 
 [project.optional-dependencies]
-# Database connectors — install only what you need
-postgres    = ["psycopg2-binary>=2.9.9"]
-mysql       = ["PyMySQL>=1.1.0"]
-clickhouse  = ["clickhouse-connect>=0.7.0"]
-spanner     = ["google-cloud-spanner>=3.40.0"]
+# ── Individual connector extras (for minimal / selective installs) ────────────
+postgres          = ["psycopg2-binary>=2.9.9"]
+mysql             = ["PyMySQL>=1.1.0"]
+clickhouse        = ["clickhouse-connect>=0.7.0"]
+clickhouse-native = ["clickhouse-driver>=0.2.6"]   # native TCP transport
+spanner           = ["google-cloud-spanner>=3.40.0"]
 
-# Reporting
-pdf         = ["reportlab>=4.0.0"]
-email       = ["secure-smtplib>=0.1.1"]
+# ── Reporting extras ──────────────────────────────────────────────────────────
+pdf               = ["reportlab>=4.0.0"]
+email             = ["secure-smtplib>=0.1.1"]
 
-# Install everything
+# ── Install everything including the native TCP ClickHouse driver ─────────────
 all = [
     "psycopg2-binary>=2.9.9",
     "PyMySQL>=1.1.0",
     "clickhouse-connect>=0.7.0",
+    "clickhouse-driver>=0.2.6",
     "google-cloud-spanner>=3.40.0",
     "reportlab>=4.0.0",
     "secure-smtplib>=0.1.1",
 ]
 
-# Development tools
+# ── Development tools ─────────────────────────────────────────────────────────
 dev = [
     "pytest>=7.4.3",
     "black>=23.12.0",

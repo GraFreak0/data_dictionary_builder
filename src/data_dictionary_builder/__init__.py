@@ -10,7 +10,7 @@ from .notifications.email_sender import EmailSender
 from .DDHelper import DDHelper
 from .timer import ExecutionTimer
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __all__ = [
     "MetadataExtractor",
     "DatabaseMetadata",

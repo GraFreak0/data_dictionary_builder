@@ -38,11 +38,18 @@ CONNECTORS = {
         "notes":       "",
     },
     "clickhouse": {
-        "label":       "ClickHouse",
+        "label":       "ClickHouse (HTTP/HTTPS)",
+        "import_mod":  "clickhouse_connect",
+        "pip_package": "clickhouse-connect",
+        "pip_extra":   "clickhouse",
+        "notes":       "recommended for cloud instances",
+    },
+    "clickhouse-native": {
+        "label":       "ClickHouse (Native TCP)",
         "import_mod":  "clickhouse_driver",
         "pip_package": "clickhouse-driver",
-        "pip_extra":   "clickhouse",
-        "notes":       "",
+        "pip_extra":   "clickhouse-native",
+        "notes":       "use transport='native' in MetadataExtractor",
     },
     "spanner": {
         "label":       "Google Cloud Spanner",

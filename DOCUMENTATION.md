@@ -21,23 +21,34 @@
 ## 1. Installation
 
 ```bash
-# Install from PyPI (once published)
+# Full install — all connectors included by default
 pip install data-dictionary-builder
 
-# Install from source
+# Install from source (also installs all connectors)
 git clone https://github.com/GraFreak0/data_dictionary_builder.git
 cd data_dictionary_builder
 pip install -e .
 ```
 
-Only install the drivers you need — they are all optional:
+For a **minimal install**, use `--no-deps` then add only what you need:
 
 ```bash
-pip install psycopg2-binary          # PostgreSQL
-pip install PyMySQL                  # MySQL / MariaDB
-pip install clickhouse-connect        # ClickHouse
-pip install google-cloud-spanner     # Google Cloud Spanner
-pip install reportlab                # PDF report generation
+pip install data-dictionary-builder --no-deps
+pip install "data-dictionary-builder[postgres]"           # psycopg2-binary
+pip install "data-dictionary-builder[mysql]"              # PyMySQL
+pip install "data-dictionary-builder[clickhouse]"         # clickhouse-connect (HTTP/HTTPS)
+pip install "data-dictionary-builder[clickhouse-native]"  # clickhouse-driver (native TCP)
+pip install "data-dictionary-builder[spanner]"            # google-cloud-spanner
+pip install "data-dictionary-builder[all]"                # everything incl. both CH drivers
+```
+
+Or install connectors at any time via the CLI:
+
+```bash
+ddgen install postgres
+ddgen install clickhouse            # HTTP/HTTPS driver (clickhouse-connect)
+ddgen install clickhouse-native     # native TCP driver (clickhouse-driver)
+ddgen install all
 ```
 
 ---
@@ -135,19 +146,44 @@ Requires `PyMySQL`. Omit `database` to scan all databases on the server.
 
 ### ClickHouse
 
+Two transports are supported. Pass `transport` explicitly or omit it to auto-detect (HTTP preferred when both drivers are installed).
+
+**HTTP / HTTPS — `clickhouse-connect` (recommended for cloud)**
+
 ```python
 with MetadataExtractor(
     db_type="clickhouse",
     host="my-cluster.clickhouse.cloud",
-    port=8443,          # HTTPS — use 8123 for plain HTTP
+    port=8443,              # HTTPS — use 8123 for plain HTTP
     database="default",
     user="default",
     password="secret",
-    secure=True,        # TLS
-    verify=False,       # skip cert check for self-signed certs
+    transport="http",       # default when clickhouse-connect is installed
+    secure=True,
+    verify=False,           # skip cert check for self-signed certs
 ) as ext:
     ...
 ```
+
+Install: `ddgen install clickhouse`
+
+**Native TCP — `clickhouse-driver` (for on-prem clusters)**
+
+```python
+with MetadataExtractor(
+    db_type="clickhouse",
+    host="my-cluster.internal",
+    port=9440,              # native TLS — use 9000 for plain TCP
+    database="default",
+    user="default",
+    password="secret",
+    transport="native",     # requires clickhouse-driver
+    secure=True,
+) as ext:
+    ...
+```
+
+Install: `ddgen install clickhouse-native`
 
 Requires `clickhouse-connect` (HTTP/HTTPS transport). Install with `ddgen install clickhouse`. Metadata is read from `system.columns`.
 
@@ -749,7 +785,7 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 ### Connection Problems
 
 **ClickHouse — `Connection refused` or timeout**
-Use the **HTTP port** — `8123` (plain) or `8443` (TLS/HTTPS). The native TCP port `9440`/`9000` is not used by `clickhouse-connect`. For cloud instances pass `secure=True` (defaults to port `8443`) and `verify=False` for self-signed certificates.
+Check which transport you're using. For `transport="http"` (clickhouse-connect) use port `8123` (plain) or `8443` (HTTPS). For `transport="native"` (clickhouse-driver) use port `9000` (plain) or `9440` (native TLS). Pass `secure=True` for cloud instances and `verify=False` for self-signed certificates. If `transport` is omitted, the connector auto-detects whichever driver is installed (HTTP preferred).
 
 **Google Cloud Spanner — `google.auth.exceptions.DefaultCredentialsError`**
 Run `gcloud auth application-default login`, or set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json`.

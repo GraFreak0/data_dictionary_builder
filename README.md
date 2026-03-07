@@ -11,24 +11,25 @@ A Python library that automates database documentation — extract live schema m
 ## Installation
 
 ```bash
-# Core library (SQLite works out of the box)
+# Full install — all connectors included by default
 pip install data-dictionary-builder
 
-# With the connectors you need
+# Minimal install — add only the connectors you need
+pip install data-dictionary-builder --no-deps
 pip install "data-dictionary-builder[postgres]"
 pip install "data-dictionary-builder[mysql]"
-pip install "data-dictionary-builder[clickhouse]"
+pip install "data-dictionary-builder[clickhouse]"          # HTTP/HTTPS (recommended)
+pip install "data-dictionary-builder[clickhouse-native]"   # native TCP
 pip install "data-dictionary-builder[spanner]"
-
-# Everything at once
-pip install "data-dictionary-builder[all]"
+pip install "data-dictionary-builder[all]"                 # everything incl. both CH drivers
 ```
 
-Or use the CLI to install connectors after the fact:
+Or install connectors at any time using the CLI:
 
 ```bash
 ddgen install postgres
-ddgen install clickhouse
+ddgen install clickhouse            # HTTP/HTTPS driver
+ddgen install clickhouse-native     # native TCP driver
 ddgen install all
 ```
 
@@ -41,7 +42,8 @@ ddgen install all
 | **SQLite** | *(built-in)* | `sqlite3` (stdlib) |
 | **PostgreSQL** | `[postgres]` | `psycopg2-binary` |
 | **MySQL / MariaDB** | `[mysql]` | `PyMySQL` |
-| **ClickHouse** | `[clickhouse]` | `clickhouse-connect` (HTTP/HTTPS) |
+| **ClickHouse** | `[clickhouse]` | `clickhouse-connect` (HTTP/HTTPS, default) |
+| **ClickHouse** | `[clickhouse-native]` | `clickhouse-driver` (native TCP) |
 | **Google Cloud Spanner** | `[spanner]` | `google-cloud-spanner` |
 
 ---
