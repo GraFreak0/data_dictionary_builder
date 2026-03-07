@@ -1,27 +1,44 @@
 """
 ClickHouse database connector implementation.
+
+Uses the clickhouse-connect library (HTTP/HTTPS transport) instead of the
+native TCP protocol driver. Install with:
+
+    pip install data-dictionary-builder[clickhouse]
+    # or
+    ddgen install clickhouse
 """
 
-from clickhouse_driver import Client
+import clickhouse_connect
 from typing import List, Optional, Dict, Any
 from .base import BaseConnector
 from ..metadata.models import SchemaMetadata, TableMetadata, ColumnMetadata
 
 
 class ClickHouseConnector(BaseConnector):
-    """Connector for ClickHouse databases."""
-    
-    def __init__(self, host: str, port: int, database: str = 'default', user: str = 'default', password: str = '', **kwargs):
+    """Connector for ClickHouse databases (HTTP/HTTPS transport via clickhouse-connect)."""
+
+    def __init__(
+        self,
+        host: str,
+        port: int = 8123,
+        database: str = "default",
+        user: str = "default",
+        password: str = "",
+        **kwargs,
+    ):
         """
-        Initialize ClickHouse connector.
-        
+        Initialise the ClickHouse connector.
+
         Args:
-            host: Database host
-            port: Database port (native protocol, typically 9000)
-            database: Database name (optional - defaults to 'default')
-            user: Username (default: 'default')
-            password: Password
-            **kwargs: Additional connection parameters
+            host:     ClickHouse server hostname or IP.
+            port:     HTTP port — 8123 (plain) or 8443 (TLS). Default: 8123.
+            database: Database name. Omit (or pass None) for server-mode scanning.
+            user:     Username. Default: 'default'.
+            password: Password. Default: empty string.
+            **kwargs: Extra keyword arguments forwarded to
+                      ``clickhouse_connect.get_client()``, e.g.
+                      ``secure=True``, ``verify=False``.
         """
         super().__init__(
             host=host,
@@ -29,7 +46,7 @@ class ClickHouseConnector(BaseConnector):
             database=database,
             user=user,
             password=password,
-            **kwargs
+            **kwargs,
         )
         self.host = host
         self.port = port
@@ -37,243 +54,159 @@ class ClickHouseConnector(BaseConnector):
         self.user = user
         self.password = password
         self.db_type = "clickhouse"
-        self.server_mode = database is None  # ClickHouse can extract from all databases
-        self.connect_database = database if database else 'default'
-    
+        self.server_mode = database is None
+        self.connect_database = database if database else "default"
+        self._extra_kwargs = {
+            k: v
+            for k, v in kwargs.items()
+            if k not in ("host", "port", "database", "user", "password")
+        }
+
+    # ── Connection lifecycle ──────────────────────────────────────────────────
+
     def connect(self) -> None:
-        """Establish connection to ClickHouse database."""
+        """Open an HTTP(S) connection to the ClickHouse server."""
         try:
-            self.connection = Client(
+            self.connection = clickhouse_connect.get_client(
                 host=self.host,
                 port=self.port,
-                database=self.database,
-                user=self.user,
+                database=self.connect_database,
+                username=self.user,       # clickhouse-connect uses 'username'
                 password=self.password,
-                **{k: v for k, v in self.connection_params.items() 
-                   if k not in ['host', 'port', 'database', 'user', 'password']}
+                **self._extra_kwargs,
             )
-            # Test connection
-            self.connection.execute('SELECT 1')
+            # Smoke test
+            self.connection.query("SELECT 1")
         except Exception as e:
-            raise ConnectionError(f"Failed to connect to ClickHouse database: {e}")
-    
+            raise ConnectionError(f"Failed to connect to ClickHouse: {e}")
+
     def disconnect(self) -> None:
-        """Close the database connection."""
+        """Close the HTTP client."""
         if self.connection:
-            self.connection.disconnect()
+            self.connection.close()
             self.connection = None
-    
+
+    # ── Schema / table listing ────────────────────────────────────────────────
+
     def get_schemas(self) -> List[str]:
-        """
-        Get list of all databases (schemas) in ClickHouse.
-        
-        Returns:
-            List of schema names
-        """
-        result = self.connection.execute("""
-            SELECT name 
-            FROM system.databases 
-            WHERE name NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')
-            ORDER BY name
-        """)
-        schemas = [row[0] for row in result]
+        """Return all user-visible database names."""
+        result = self.connection.query(
+            "SELECT name FROM system.databases "
+            "WHERE name NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA') "
+            "ORDER BY name"
+        )
+        schemas = [row[0] for row in result.result_rows]
         return schemas if schemas else [self.database]
-    
+
     def get_tables(self, schema_name: str) -> List[str]:
-        """
-        Get list of tables in a schema (database).
-        
-        Args:
-            schema_name: Name of the schema (database)
-            
-        Returns:
-            List of table names
-        """
-        result = self.connection.execute("""
-            SELECT name 
-            FROM system.tables 
-            WHERE database = %(database)s
-            AND engine NOT IN ('View', 'MaterializedView')
-            ORDER BY name
-        """, {'database': schema_name})
-        tables = [row[0] for row in result]
-        return tables
-    
+        """Return all base-table names in *schema_name*."""
+        result = self.connection.query(
+            "SELECT name FROM system.tables "
+            "WHERE database = {db:String} "
+            "AND engine NOT IN ('View', 'MaterializedView') "
+            "ORDER BY name",
+            parameters={"db": schema_name},
+        )
+        return [row[0] for row in result.result_rows]
+
+    # ── Column / key metadata ─────────────────────────────────────────────────
+
     def get_columns(self, schema_name: str, table_name: str) -> List[ColumnMetadata]:
-        """
-        Get column metadata for a table.
-        
-        Args:
-            schema_name: Name of the schema
-            table_name: Name of the table
-            
-        Returns:
-            List of ColumnMetadata objects
-        """
-        result = self.connection.execute("""
-            SELECT 
-                name,
-                type,
-                default_kind,
-                default_expression,
-                comment,
-                position
-            FROM system.columns
-            WHERE database = %(database)s AND table = %(table)s
-            ORDER BY position
-        """, {'database': schema_name, 'table': table_name})
-        
-        # Get primary keys
-        primary_keys = self.get_primary_keys(schema_name, table_name)
-        
+        """Return column metadata for a single table."""
+        result = self.connection.query(
+            "SELECT name, type, default_kind, default_expression, comment, position "
+            "FROM system.columns "
+            "WHERE database = {db:String} AND table = {tbl:String} "
+            "ORDER BY position",
+            parameters={"db": schema_name, "tbl": table_name},
+        )
+
+        primary_keys = set(self.get_primary_keys(schema_name, table_name))
         columns = []
-        for row in result:
-            col_name = row[0]
-            col_type = row[1]
-            default_kind = row[2]
-            default_expr = row[3]
-            comment = row[4]
-            position = row[5]
-            
-            # ClickHouse doesn't have traditional NULL concept, but Nullable() type wrapper
-            is_nullable = 'Nullable' in col_type
-            
-            # Extract base type if nullable
-            data_type = col_type.replace('Nullable(', '').rstrip(')') if is_nullable else col_type
-            
-            column = ColumnMetadata(
-                name=col_name,
+        for name, col_type, default_kind, default_expr, comment, position in result.result_rows:
+            is_nullable = "Nullable" in col_type
+            data_type = col_type.replace("Nullable(", "").rstrip(")") if is_nullable else col_type
+            columns.append(ColumnMetadata(
+                name=name,
                 data_type=data_type,
                 is_nullable=is_nullable,
-                is_primary_key=col_name in primary_keys,
+                is_primary_key=name in primary_keys,
                 default_value=default_expr if default_kind else None,
-                description=comment if comment else None,
-                ordinal_position=position
-            )
-            
-            columns.append(column)
-        
+                description=comment or None,
+                ordinal_position=position,
+            ))
         return columns
-    
+
     def get_primary_keys(self, schema_name: str, table_name: str) -> List[str]:
-        """
-        Get primary key columns for a table.
-        
-        Args:
-            schema_name: Name of the schema
-            table_name: Name of the table
-            
-        Returns:
-            List of primary key column names
-        """
+        """Return the list of primary-key column names for *table_name*."""
         try:
-            result = self.connection.execute("""
-                SELECT primary_key
-                FROM system.tables
-                WHERE database = %(database)s AND name = %(table)s
-            """, {'database': schema_name, 'table': table_name})
-            
-            if result and result[0][0]:
-                # Primary key is returned as a string like "id" or "(id, timestamp)"
-                pk_str = result[0][0].strip('()')
-                # Split by comma and clean up
-                primary_keys = [pk.strip() for pk in pk_str.split(',')]
-                return primary_keys
-            return []
+            result = self.connection.query(
+                "SELECT primary_key FROM system.tables "
+                "WHERE database = {db:String} AND name = {tbl:String}",
+                parameters={"db": schema_name, "tbl": table_name},
+            )
+            if result.result_rows and result.result_rows[0][0]:
+                pk_str = result.result_rows[0][0].strip("()")
+                return [pk.strip() for pk in pk_str.split(",") if pk.strip()]
         except Exception:
-            return []
-    
-    def get_foreign_keys(self, schema_name: str, table_name: str) -> List[Dict[str, str]]:
-        """
-        Get foreign key relationships for a table.
-        
-        ClickHouse doesn't enforce foreign keys, but may have metadata.
-        
-        Args:
-            schema_name: Name of the schema
-            table_name: Name of the table
-            
-        Returns:
-            List of foreign key dictionaries (usually empty for ClickHouse)
-        """
-        # ClickHouse doesn't have traditional foreign key constraints
+            pass
         return []
-    
+
+    def get_foreign_keys(self, schema_name: str, table_name: str) -> List[Dict[str, str]]:
+        """ClickHouse does not enforce foreign-key constraints; always returns []."""
+        return []
+
+    # ── Single-table extraction ───────────────────────────────────────────────
+
     def get_table_metadata(self, schema_name: str, table_name: str) -> TableMetadata:
-        """
-        Get complete metadata for a table.
-        
-        Args:
-            schema_name: Name of the schema
-            table_name: Name of the table
-            
-        Returns:
-            TableMetadata object
-        """
-        # Get table engine and comment
-        result = self.connection.execute("""
-            SELECT 
-                engine,
-                comment,
-                total_rows
-            FROM system.tables
-            WHERE database = %(database)s AND name = %(table)s
-        """, {'database': schema_name, 'table': table_name})
-        
-        engine = result[0][0] if result else 'Unknown'
-        comment = result[0][1] if result and result[0][1] else None
-        total_rows = result[0][2] if result else None
-        
-        table_metadata = TableMetadata(
+        """Return complete metadata for a single table."""
+        result = self.connection.query(
+            "SELECT engine, comment, total_rows FROM system.tables "
+            "WHERE database = {db:String} AND name = {tbl:String}",
+            parameters={"db": schema_name, "tbl": table_name},
+        )
+        row = result.result_rows[0] if result.result_rows else ("Unknown", None, None)
+        engine, comment, total_rows = row[0], row[1] or None, row[2]
+
+        table_meta = TableMetadata(
             name=table_name,
             schema_name=schema_name,
-            table_type=f'BASE TABLE ({engine})',
+            table_type=f"BASE TABLE ({engine})",
             description=comment,
-            row_count=total_rows
+            row_count=total_rows,
         )
-        
-        # Get columns
-        columns = self.get_columns(schema_name, table_name)
-        for column in columns:
-            table_metadata.add_column(column)
-        
-        # Get primary keys
-        table_metadata.primary_keys = self.get_primary_keys(schema_name, table_name)
-        
-        return table_metadata
-    
+        for col in self.get_columns(schema_name, table_name):
+            table_meta.add_column(col)
+        table_meta.primary_keys = self.get_primary_keys(schema_name, table_name)
+        return table_meta
+
+    # ── Bulk schema extraction (2 queries for any N tables) ──────────────────
+
     def extract_schema_metadata(self, schema_name: str) -> SchemaMetadata:
         """
         Bulk-optimised schema extraction for ClickHouse.
 
-        Fetches all table info and all column info for the entire schema in
-        **2 queries** instead of the base-class default of 3 queries per table
-        (system.tables for metadata + system.tables for PKs + system.columns).
+        Issues exactly **2 HTTP queries** regardless of table count:
+          1. ``system.tables``  — engine, comment, row count, primary key
+          2. ``system.columns`` — all columns for all tables at once
+
         For a schema with N tables this reduces round-trips from 3N → 2.
-
-        Args:
-            schema_name: ClickHouse database name to extract.
-
-        Returns:
-            SchemaMetadata populated with all tables and columns.
         """
-        # ── Query 1: all tables (engine, comment, row count, primary key) ──
-        tables_result = self.connection.execute(
-            """
-            SELECT name, engine, comment, total_rows, primary_key
-            FROM system.tables
-            WHERE database = %(db)s
-              AND engine NOT IN ('View', 'MaterializedView')
-            ORDER BY name
-            """,
-            {"db": schema_name},
+        # ── Query 1: all tables ───────────────────────────────────────────────
+        tables_result = self.connection.query(
+            "SELECT name, engine, comment, total_rows, primary_key "
+            "FROM system.tables "
+            "WHERE database = {db:String} "
+            "AND engine NOT IN ('View', 'MaterializedView') "
+            "ORDER BY name",
+            parameters={"db": schema_name},
         )
 
-        if not tables_result:
+        if not tables_result.result_rows:
             return SchemaMetadata(name=schema_name)
 
         tables_info: Dict[str, Dict[str, Any]] = {}
-        for name, engine, comment, total_rows, pk_str in tables_result:
+        for name, engine, comment, total_rows, pk_str in tables_result.result_rows:
             pk_list: List[str] = []
             if pk_str:
                 pk_list = [p.strip() for p in pk_str.strip("()").split(",") if p.strip()]
@@ -284,44 +217,44 @@ class ClickHouseConnector(BaseConnector):
                 "primary_keys": pk_list,
             }
 
-        # ── Query 2: all columns for every table in one round-trip ──────────
-        columns_result = self.connection.execute(
-            """
-            SELECT table, name, type, default_kind, default_expression,
-                   comment, position
-            FROM system.columns
-            WHERE database = %(db)s
-              AND table IN %(tables)s
-            ORDER BY table, position
-            """,
-            {"db": schema_name, "tables": tuple(tables_info.keys())},
+        # ── Query 2: all columns for all tables ───────────────────────────────
+        # Table names come from system.tables (trusted source), so safe to inline.
+        table_list = ", ".join(f"'{t}'" for t in tables_info.keys())
+        columns_result = self.connection.query(
+            f"SELECT table, name, type, default_kind, default_expression, "
+            f"comment, position "
+            f"FROM system.columns "
+            f"WHERE database = {{db:String}} "
+            f"AND table IN ({table_list}) "
+            f"ORDER BY table, position",
+            parameters={"db": schema_name},
         )
 
-        # Group column rows by table name
+        # Group column rows by table
         cols_by_table: Dict[str, list] = {t: [] for t in tables_info}
-        for row in columns_result:
+        for row in columns_result.result_rows:
             tbl = row[0]
             if tbl in cols_by_table:
                 cols_by_table[tbl].append(row)
 
-        # ── Build SchemaMetadata in-memory ───────────────────────────────────
+        # ── Assemble SchemaMetadata ───────────────────────────────────────────
         schema_metadata = SchemaMetadata(name=schema_name)
 
         for table_name, tinfo in tables_info.items():
             pk_set = set(tinfo["primary_keys"])
-            table_metadata = TableMetadata(
+            table_meta = TableMetadata(
                 name=table_name,
                 schema_name=schema_name,
                 table_type=f'BASE TABLE ({tinfo["engine"]})',
                 description=tinfo["comment"],
                 row_count=tinfo["total_rows"],
             )
-            table_metadata.primary_keys = tinfo["primary_keys"]
+            table_meta.primary_keys = tinfo["primary_keys"]
 
             for _, col_name, col_type, default_kind, default_expr, col_comment, position in cols_by_table.get(table_name, []):
                 is_nullable = "Nullable" in col_type
                 data_type = col_type.replace("Nullable(", "").rstrip(")") if is_nullable else col_type
-                table_metadata.add_column(ColumnMetadata(
+                table_meta.add_column(ColumnMetadata(
                     name=col_name,
                     data_type=data_type,
                     is_nullable=is_nullable,
@@ -331,38 +264,25 @@ class ClickHouseConnector(BaseConnector):
                     ordinal_position=position,
                 ))
 
-            schema_metadata.add_table(table_metadata)
+            schema_metadata.add_table(table_meta)
 
         return schema_metadata
 
-    def get_database_version(self) -> Optional[str]:
-        """
-        Get ClickHouse version.
+    # ── Utility ───────────────────────────────────────────────────────────────
 
-        Returns:
-            ClickHouse version string
-        """
-        result = self.connection.execute("SELECT version()")
-        return result[0][0] if result else None
-    
+    def get_database_version(self) -> Optional[str]:
+        """Return the ClickHouse server version string."""
+        result = self.connection.query("SELECT version()")
+        return result.result_rows[0][0] if result.result_rows else None
+
     def get_table_row_count(self, schema_name: str, table_name: str) -> Optional[int]:
-        """
-        Get approximate row count for a table.
-        
-        Args:
-            schema_name: Name of the schema
-            table_name: Name of the table
-            
-        Returns:
-            Row count
-        """
+        """Return the approximate row count for a table."""
         try:
-            result = self.connection.execute("""
-                SELECT total_rows
-                FROM system.tables
-                WHERE database = %(database)s AND name = %(table)s
-            """, {'database': schema_name, 'table': table_name})
-            
-            return result[0][0] if result else None
+            result = self.connection.query(
+                "SELECT total_rows FROM system.tables "
+                "WHERE database = {db:String} AND name = {tbl:String}",
+                parameters={"db": schema_name, "tbl": table_name},
+            )
+            return result.result_rows[0][0] if result.result_rows else None
         except Exception:
             return None

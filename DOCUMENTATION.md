@@ -35,7 +35,7 @@ Only install the drivers you need — they are all optional:
 ```bash
 pip install psycopg2-binary          # PostgreSQL
 pip install PyMySQL                  # MySQL / MariaDB
-pip install clickhouse-driver        # ClickHouse
+pip install clickhouse-connect        # ClickHouse
 pip install google-cloud-spanner     # Google Cloud Spanner
 pip install reportlab                # PDF report generation
 ```
@@ -139,7 +139,7 @@ Requires `PyMySQL`. Omit `database` to scan all databases on the server.
 with MetadataExtractor(
     db_type="clickhouse",
     host="my-cluster.clickhouse.cloud",
-    port=9440,          # native protocol — NOT the HTTP port 8123
+    port=8443,          # HTTPS — use 8123 for plain HTTP
     database="default",
     user="default",
     password="secret",
@@ -149,7 +149,7 @@ with MetadataExtractor(
     ...
 ```
 
-Requires `clickhouse-driver`. Metadata is read from `system.columns`.
+Requires `clickhouse-connect` (HTTP/HTTPS transport). Install with `ddgen install clickhouse`. Metadata is read from `system.columns`.
 
 ### Google Cloud Spanner
 
@@ -749,7 +749,7 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 ### Connection Problems
 
 **ClickHouse — `Connection refused` or timeout**
-Use the **native protocol port** — `9440` (TLS) or `9000` (plain). The HTTP port `8123` is not supported by this library. Always set `secure=True` for cloud instances and `verify=False` if using self-signed certificates.
+Use the **HTTP port** — `8123` (plain) or `8443` (TLS/HTTPS). The native TCP port `9440`/`9000` is not used by `clickhouse-connect`. For cloud instances pass `secure=True` (defaults to port `8443`) and `verify=False` for self-signed certificates.
 
 **Google Cloud Spanner — `google.auth.exceptions.DefaultCredentialsError`**
 Run `gcloud auth application-default login`, or set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json`.

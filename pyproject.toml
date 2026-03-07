@@ -42,7 +42,7 @@ dependencies = [
 # Database connectors — install only what you need
 postgres    = ["psycopg2-binary>=2.9.9"]
 mysql       = ["PyMySQL>=1.1.0"]
-clickhouse  = ["clickhouse-driver>=0.2.6"]
+clickhouse  = ["clickhouse-connect>=0.7.0"]
 spanner     = ["google-cloud-spanner>=3.40.0"]
 
 # Reporting
@@ -53,7 +53,7 @@ email       = ["secure-smtplib>=0.1.1"]
 all = [
     "psycopg2-binary>=2.9.9",
     "PyMySQL>=1.1.0",
-    "clickhouse-driver>=0.2.6",
+    "clickhouse-connect>=0.7.0",
     "google-cloud-spanner>=3.40.0",
     "reportlab>=4.0.0",
     "secure-smtplib>=0.1.1",
@@ -73,7 +73,7 @@ Repository  = "https://github.com/GraFreak0/data_dictionary_builder"
 Issues      = "https://github.com/GraFreak0/data_dictionary_builder/issues"
 
 [project.scripts]
-db-metadata-gen = "data_dictionary_builder.cli:main"
+ddgen = "data_dictionary_builder.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
