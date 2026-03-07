@@ -113,4 +113,4 @@ Database connection configurations should include:
 
 ## License
 
-MIT
+MIT License

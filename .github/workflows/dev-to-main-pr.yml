@@ -5,21 +5,23 @@ on:
     branches:
       - dev
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   pr:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v6
+      - uses: actions/checkout@v4
+
+      - name: Create PR
+        uses: repo-sync/pull-request@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          base: main
-          branch: dev
-          title: "Dev → Main Sync"
-          body: "Auto PR created after updates to dev."
-          draft: false
+          source_branch: dev
+          destination_branch: main
+          pr_title: "Dev → Main Sync"
+          pr_body: "Auto PR created after updates to dev."
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           reviewers: grafreak0
-          labels: |
-            automated
-            dev-to-main
