@@ -1,68 +1,55 @@
-# data_dictionary_builder — Complete Documentation
+# data_dictionary_builder — User Guide
 
 ## Table of Contents
 
-1. [Overview](#1-overview)
-2. [Installation](#2-installation)
-3. [Quick Start](#3-quick-start)
-4. [Database Connectors](#4-database-connectors)
-5. [Metadata Extraction](#5-metadata-extraction)
-6. [Schema Filtering](#6-schema-filtering)
-7. [Parallel Extraction](#7-parallel-extraction)
-8. [YAML Generation](#8-yaml-generation)
-9. [Schema Comparison](#9-schema-comparison)
-10. [DDHelper — Output & Reporting Utility](#10-ddhelper--output--reporting-utility)
-11. [ExecutionTimer — Performance Timing](#11-executiontimer--performance-timing)
-12. [Email Notifications](#12-email-notifications)
-13. [Airflow Integration](#13-airflow-integration)
-14. [API Reference](#14-api-reference)
-15. [Troubleshooting](#15-troubleshooting)
+1. [Installation](#1-installation)
+2. [Quick Start](#2-quick-start)
+3. [Connecting to Your Database](#3-connecting-to-your-database)
+4. [Extracting Metadata](#4-extracting-metadata)
+5. [Filtering Schemas](#5-filtering-schemas)
+6. [Parallel Extraction](#6-parallel-extraction)
+7. [Generating dbt YAML](#7-generating-dbt-yaml)
+8. [Comparing Schemas](#8-comparing-schemas)
+9. [Reports: JSON, PDF, and Email](#9-reports-json-pdf-and-email)
+10. [Timing Your Pipeline](#10-timing-your-pipeline)
+11. [Airflow Integration](#11-airflow-integration)
+12. [API Reference](#12-api-reference)
+13. [Troubleshooting](#13-troubleshooting)
 
 ---
 
-## 1. Overview
-
-**data_dictionary_builder** is a Python library for extracting database metadata, generating dbt-compatible YAML documentation, comparing schemas across databases, and delivering structured reports — all with built-in timing and email delivery.
-
-### Key Features
-
-| Feature | Description |
-|---|---|
-| **Multi-database** | SQLite, PostgreSQL, MySQL, ClickHouse, Google Cloud Spanner |
-| **Metadata extraction** | Tables, columns, constraints, row counts, FK relationships |
-| **Parallel extraction** | ThreadPoolExecutor; configurable worker count; thread-safe |
-| **Server mode** | Scan all databases on a server when no `database` is specified |
-| **Schema filtering** | Exact, glob, prefix, suffix, contains, regex — mix freely |
-| **YAML generation** | dbt v2-compatible; smart merge preserves existing descriptions |
-| **Schema comparison** | Cross-database diff; type normalisation |
-| **DDHelper** | Manages output dirs, JSON/PDF reports, email delivery |
-| **ExecutionTimer** | Named-task timing with formatted summary table |
-| **Email** | SMTP delivery with HTML+text body and PDF attachment |
-
----
-
-## 2. Installation
+## 1. Installation
 
 ```bash
-# From source
+# Install from PyPI (once published)
+pip install data-dictionary-builder
+
+# Install from source
 git clone https://github.com/GraFreak0/data_dictionary_builder.git
 cd data_dictionary_builder
-pip install -r requirements.txt
 pip install -e .
+```
 
-# With dev tools (pytest, black, flake8, mypy)
-pip install -e ".[dev]"
+Only install the drivers you need — they are all optional:
+
+```bash
+pip install psycopg2-binary          # PostgreSQL
+pip install PyMySQL                  # MySQL / MariaDB
+pip install clickhouse-driver        # ClickHouse
+pip install google-cloud-spanner     # Google Cloud Spanner
+pip install reportlab                # PDF report generation
 ```
 
 ---
 
-## 3. Quick Start
+## 2. Quick Start
+
+The fastest path from zero to documented database:
 
 ```python
 from data_dictionary_builder import (
     MetadataExtractor,
     YAMLGenerator,
-    SchemaComparator,
     DDHelper,
     ExecutionTimer,
 )
@@ -70,17 +57,15 @@ from data_dictionary_builder import (
 timer  = ExecutionTimer()
 helper = DDHelper(".")          # creates models/, reports/json/, reports/pdf/
 
-config = {
-    "db_type": "postgres",
-    "host": "localhost",
-    "port": 5432,
-    "database": "mydb",
-    "user": "readonly",
-    "password": "secret",
-}
-
-with timer.task("Extract metadata"):
-    with MetadataExtractor(**config) as ext:
+with timer.task("Extract"):
+    with MetadataExtractor(
+        db_type="postgres",
+        host="localhost",
+        port=5432,
+        database="mydb",
+        user="readonly",
+        password="secret",
+    ) as ext:
         db_meta = ext.extract_all_schemas(
             schema_filter=["public", "analytics"],
             parallel_workers=8,
@@ -90,143 +75,145 @@ with timer.task("Generate YAML"):
     gen = YAMLGenerator(output_dir=str(helper.models_dir))
     gen.generate_yaml_files(db_meta)
 
-with timer.task("Compare schemas"):
-    report = SchemaComparator(
-        source_config=config,
-        destination_config={**config, "host": "staging-db"},
-    ).compare_and_generate_report("public", include_yaml_gaps=True)
-
-with timer.task("Save & email report"):
-    json_path = helper.save_report(report)
-    pdf_path  = helper.compile_pdf(source_json=json_path)
-    helper.send_report_email(report=report, pdf_path=pdf_path,
-                             email_to="team@example.com")
-
 timer.summary()
+# ────────────────────────────────────
+#   Extract              2.341s
+#   Generate YAML        0.087s
+# ────────────────────────────────────
+#   TOTAL                2.428s
+# ────────────────────────────────────
 ```
+
+Your schemas are now documented in dbt-compatible YAML files under `./models/`.
 
 ---
 
-## 4. Database Connectors
+## 3. Connecting to Your Database
 
-Connectors are created via the factory function `get_connector(db_type, **kwargs)` or indirectly through `MetadataExtractor`. You do not need to instantiate them directly.
+All connections go through `MetadataExtractor`. Always use it as a context manager — it opens and closes the connection automatically.
 
 ### SQLite
 
 ```python
-config = {
-    "db_type":  "sqlite",
-    "database": "/path/to/database.db",
-}
+with MetadataExtractor(db_type="sqlite", database="/path/to/file.db") as ext:
+    ...
 ```
+
+No additional packages needed. Use `:memory:` for in-memory databases.
 
 ### PostgreSQL
 
 ```python
-config = {
-    "db_type":  "postgres",
-    "host":     "localhost",
-    "port":     5432,
-    "database": "mydb",
-    "user":     "postgres",
-    "password": "password",
-}
+with MetadataExtractor(
+    db_type="postgres",
+    host="localhost",
+    port=5432,
+    database="mydb",
+    user="readonly",
+    password="secret",
+) as ext:
+    ...
 ```
 
-Row counts use `pg_class` estimates for performance.
+Requires `psycopg2-binary`. Row counts use `pg_class` estimates for speed.
 
 ### MySQL / MariaDB
 
 ```python
-config = {
-    "db_type":  "mysql",
-    "host":     "localhost",
-    "port":     3306,
-    "database": "mydb",       # omit for server mode
-    "user":     "root",
-    "password": "password",
-}
+with MetadataExtractor(
+    db_type="mysql",
+    host="localhost",
+    port=3306,
+    database="mydb",
+    user="root",
+    password="secret",
+) as ext:
+    ...
 ```
+
+Requires `PyMySQL`. Omit `database` to scan all databases on the server.
 
 ### ClickHouse
 
 ```python
-config = {
-    "db_type":  "clickhouse",
-    "host":     "my-cluster.clickhouse.cloud",
-    "port":     9440,          # native protocol (not HTTP 8123)
-    "database": "default",     # omit for server mode
-    "user":     "default",
-    "password": "secret",
-    "secure":   True,          # TLS
-    "verify":   False,         # skip cert verification for self-signed certs
-}
+with MetadataExtractor(
+    db_type="clickhouse",
+    host="my-cluster.clickhouse.cloud",
+    port=9440,          # native protocol — NOT the HTTP port 8123
+    database="default",
+    user="default",
+    password="secret",
+    secure=True,        # TLS
+    verify=False,       # skip cert check for self-signed certs
+) as ext:
+    ...
 ```
 
-Metadata is read from ClickHouse's `system.columns` table.
+Requires `clickhouse-driver`. Metadata is read from `system.columns`.
 
 ### Google Cloud Spanner
 
 ```python
-config = {
-    "db_type":     "spanner",
-    "instance_id": "my-instance",
-    "database_id": "my-database",
-    "project_id":  "my-gcp-project",   # optional; uses ADC if omitted
-}
+with MetadataExtractor(
+    db_type="spanner",
+    instance_id="my-instance",
+    database_id="my-database",
+    project_id="my-gcp-project",   # optional if ADC is configured
+) as ext:
+    ...
 ```
 
-Requires Application Default Credentials (`gcloud auth application-default login` or `GOOGLE_APPLICATION_CREDENTIALS`).
+Requires `google-cloud-spanner` and Application Default Credentials. Run `gcloud auth application-default login` or set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json`.
 
 ### Server Mode
 
-When `database` is **omitted**, the extractor scans **all databases** on the server. Supported for MySQL, ClickHouse, and PostgreSQL.
+Omit `database` to scan **all databases on the server** at once. Supported for MySQL, ClickHouse, and PostgreSQL.
 
 ```python
-# Omit 'database' to enable server mode
-config = {
-    "db_type":  "mysql",
-    "host":     "db.internal",
-    "user":     "readonly",
-    "password": "secret",
-    # no 'database' key
-}
+with MetadataExtractor(db_type="mysql", host="db.internal",
+                       user="readonly", password="secret") as ext:
+    db_meta = ext.extract_all_schemas()    # every DB on this server
+```
 
+### Testing Your Connection
+
+```python
 with MetadataExtractor(**config) as ext:
-    db_meta = ext.extract_all_schemas()    # scans every DB on the server
+    if not ext.test_connection():
+        print("Connection failed")
 ```
 
 ---
 
-## 5. Metadata Extraction
+## 4. Extracting Metadata
 
-### `MetadataExtractor`
-
-Always use as a context manager — it manages the connection lifecycle automatically.
+Once connected, you can extract at any level of granularity:
 
 ```python
 with MetadataExtractor(**config) as ext:
-    # Test connection
-    ok = ext.test_connection()
 
-    # List schemas / tables without extracting full metadata
+    # List schema names without extracting metadata
     schemas = ext.get_schemas_list()
-    tables  = ext.get_tables_list("public")
+
+    # List table names in a schema without extracting metadata
+    tables = ext.get_tables_list("public")
 
     # Extract a single table
     table = ext.extract_table("public", "orders")
 
-    # Extract a single schema
+    # Extract a single schema (all tables in it)
     schema = ext.extract_schema("public")
 
-    # Extract all schemas (with optional filter and parallelism)
+    # Extract multiple schemas (recommended — supports filtering and parallelism)
     db_meta = ext.extract_all_schemas(
         schema_filter=["public", "analytics"],
-        parallel_workers=10,
+        parallel_workers=8,
     )
 ```
 
-### Data Model Hierarchy
+### The Data Model
+
+Extracted metadata is organised as a nested object hierarchy:
 
 ```
 DatabaseMetadata
@@ -234,84 +221,89 @@ DatabaseMetadata
         └── tables: List[TableMetadata]
               ├── columns: List[ColumnMetadata]
               ├── primary_keys: List[str]
-              ├── foreign_keys: List[dict]
-              └── row_count: int
+              ├── row_count: int
+              └── description: str
 ```
 
-Each `ColumnMetadata` contains: `name`, `data_type`, `is_nullable`, `is_primary_key`, `ordinal_position`, `default_value`, `character_maximum_length`, `numeric_precision`, `numeric_scale`, `description`, and `foreign_key_info`.
+Each `ColumnMetadata` contains: `name`, `data_type`, `is_nullable`, `is_primary_key`, `is_foreign_key`, `foreign_key_table`, `foreign_key_column`, `ordinal_position`, `default_value`, `character_maximum_length`, `numeric_precision`, `numeric_scale`, and `description`.
 
-### Serialisation (Airflow / XCom)
+### Serialising for Storage or XCom
 
 ```python
-# Serialise to dict for XCom or JSON storage
+# Convert to a plain dict (JSON-serialisable)
 d = db_meta.to_dict()
 
-# Reconstruct from dict
+# Restore the full object from a dict
 from data_dictionary_builder import DatabaseMetadata
 db_meta = DatabaseMetadata.from_dict(d)
 ```
 
+This is used for Airflow XCom passing and for saving metadata to JSON files.
+
 ---
 
-## 6. Schema Filtering
+## 5. Filtering Schemas
 
-Pass `schema_filter` to `extract_all_schemas()`. Filtering happens **after** fetching the live schema list, so every match is guaranteed to exist.
+Pass `schema_filter` to `extract_all_schemas()` to choose which schemas to extract. Filtering happens **after** fetching the live schema list — every match is guaranteed to exist.
 
 ### Filter Strategies
 
-| Format | Example | Matches |
-|---|---|---|
-| Exact name | `"public"` | Only `public` |
-| Glob / SQL-LIKE | `"stg_%"` | `stg_orders`, `stg_customers` |
-| Prefix | `"prefix:stg_"` | Anything starting with `stg_` |
-| Suffix | `"suffix:_prod"` | Anything ending with `_prod` |
-| Contains | `"contains:analytics"` | Anything containing `analytics` |
-| Regex | `"regex:^tmp_\\d+$"` | Full `re.fullmatch` (case-insensitive) |
-| `None` | — | All schemas (no filtering) |
-
-All matching is **case-insensitive**. Strategies can be **mixed** in a single list:
+You can mix all six strategies in a single list:
 
 ```python
 db_meta = ext.extract_all_schemas(
     schema_filter=[
-        "public",                    # exact
-        "stg_%",                     # glob
-        "prefix:raw_",               # prefix
-        "suffix:_prod",              # suffix
-        "contains:analytics",        # contains
-        "regex:^tmp_\\d{4}_\\w+$",   # regex
+        "public",                      # exact name (case-insensitive)
+        "stg_%",                       # SQL-LIKE glob (* and ? also work)
+        "prefix:raw_",                 # any schema starting with raw_
+        "suffix:_prod",                # any schema ending with _prod
+        "contains:analytics",          # any schema containing analytics
+        "regex:^tmp_\\d{4}_\\w+$",    # full Python regex (re.fullmatch)
     ]
 )
 ```
 
+Pass `schema_filter=None` (the default) to extract all schemas.
+
 ---
 
-## 7. Parallel Extraction
+## 6. Parallel Extraction
 
-`extract_all_schemas()` extracts schemas concurrently using `ThreadPoolExecutor`. Each worker creates its own database connection so threads never share state.
+`extract_all_schemas()` uses a `ThreadPoolExecutor` internally. Each worker gets its own database connection, so threads never share state.
 
 ```python
 db_meta = ext.extract_all_schemas(
     schema_filter=["public", "analytics", "raw", "staging"],
-    parallel_workers=10,    # up to 10 concurrent threads
-                            # automatically capped at number of schemas
+    parallel_workers=10,    # up to 10 schemas extracted concurrently
+                            # automatically capped at the number of schemas
 )
 ```
 
-- Set `parallel_workers=1` for sequential extraction (useful for debugging or connectors that do not support concurrent connections).
-- A worker failure is logged and skipped; it does not abort the remaining workers.
-- Results are always returned in the **original schema order**.
+**Tips:**
+- Start with `parallel_workers=8` and tune up/down based on your database's connection limit.
+- Use `parallel_workers=1` for sequential extraction when debugging or with connectors that don't support concurrent connections.
+- A single worker failure is logged and skipped; the remaining workers continue normally.
+
+**Performance (bulk queries):**
+The ClickHouse and PostgreSQL connectors use bulk queries that cover the entire schema in a fixed number of round-trips regardless of table count:
+
+| Database | Queries for N tables |
+|---|---|
+| ClickHouse | 2 (one `system.tables` + one `system.columns`) |
+| PostgreSQL | 5 (one per metadata type: columns, PKs, FKs, row counts, table info) |
 
 ---
 
-## 8. YAML Generation
+## 7. Generating dbt YAML
 
-### Per-Schema Files
+### Per-Schema Files (recommended)
 
 ```python
-gen   = YAMLGenerator(output_dir="./dbt_models")
+from data_dictionary_builder import YAMLGenerator
+
+gen   = YAMLGenerator(output_dir="./models")
 files = gen.generate_yaml_files(db_meta)
-# → dbt_models/public.yml, dbt_models/analytics.yml, …
+# → models/public.yml, models/analytics.yml, …
 ```
 
 ### Single Combined File
@@ -320,71 +312,116 @@ files = gen.generate_yaml_files(db_meta)
 filepath = gen.generate_single_yaml(db_meta, filename="all_models.yml")
 ```
 
-### Smart Merge
+### What the Output Looks Like
 
-On re-runs, `YAMLGenerator` loads any existing YAML and **preserves**:
-- User-written column and table descriptions
-- dbt test definitions
+```yaml
+version: 2
+models:
+  - name: orders
+    meta:
+      schema: public
+      table_type: BASE TABLE
+      row_count: 4821903
+    columns:
+      - name: order_id
+        data_type: integer
+        meta:
+          is_primary_key: true
+          is_nullable: false
+        tests:
+          - unique
+          - not_null
+```
+
+### Smart Merge — Your Descriptions Are Never Overwritten
+
+On every re-run, `generate_yaml_files()` loads any existing YAML and **preserves**:
+
+- User-written table and column descriptions
+- dbt test definitions you've added
 - Custom `meta` blocks
 
-Only new tables/columns are added; changed data types are updated. Nothing the user has written is overwritten.
+New tables and columns are added automatically. Changed data types are updated. Nothing you've written by hand is touched.
 
-### Documentation Gap Detection
+### Checking Documentation Coverage
 
 ```python
-tables_missing_desc  = gen.get_tables_without_descriptions(db_meta)
-columns_missing_desc = gen.get_columns_without_descriptions(db_meta)
+tables_missing  = gen.get_tables_without_descriptions(db_meta)
+columns_missing = gen.get_columns_without_descriptions(db_meta)
 
-total_tables  = sum(len(s.tables) for s in db_meta.schemas)
-total_columns = sum(len(t.columns) for s in db_meta.schemas for t in s.tables)
-
-coverage_t = 100 * (total_tables  - len(tables_missing_desc))  // max(total_tables, 1)
-coverage_c = 100 * (total_columns - len(columns_missing_desc)) // max(total_columns, 1)
-print(f"Table coverage:  {coverage_t}%")
-print(f"Column coverage: {coverage_c}%")
+total_cols = sum(len(t.columns) for s in db_meta.schemas for t in s.tables)
+coverage   = 100 * (total_cols - len(columns_missing)) // max(total_cols, 1)
+print(f"Column documentation coverage: {coverage}%")
 ```
 
 ---
 
-## 9. Schema Comparison
+## 8. Comparing Schemas
 
-### Compare Two Schemas
+Use `SchemaComparator` to detect drift between environments (e.g. production vs. staging).
+
+### Basic Comparison
 
 ```python
 from data_dictionary_builder import SchemaComparator
 
 comparator = SchemaComparator(
-    source_config=source_config,
-    destination_config=dest_config,
-    yaml_output_dir="./dbt_models",    # optional; used for gap detection
+    source_config={"db_type": "postgres", "host": "prod-db", ...},
+    destination_config={"db_type": "postgres", "host": "staging-db", ...},
+    yaml_output_dir="./models",     # optional — used for gap detection
 )
 
-# Compare schemas with the same name in source and destination
-result = comparator.compare_schemas("public")
-print(f"Missing tables:  {len(result.missing_tables)}")
-print(f"Missing columns: {len(result.missing_columns)}")
-print(f"Type mismatches: {len(result.type_mismatches)}")
-```
-
-### Generate a Full Report Dict
-
-```python
 report = comparator.compare_and_generate_report(
     source_schema_name="public",
-    destination_schema_name="public",   # defaults to source_schema_name
-    include_yaml_gaps=True,             # adds undocumented tables/columns
+    include_yaml_gaps=True,         # also report undocumented tables/columns
 )
 
-# report["summary"]["missing_tables_count"]
-# report["summary"]["missing_columns_count"]
-# report["summary"]["type_mismatches_count"]
-# report["summary"]["tables_without_descriptions_count"]
-# report["summary"]["columns_without_descriptions_count"]
-# report["comparison"]["missing_tables"]    → list of {schema, table, column_count}
-# report["comparison"]["missing_columns"]   → list of {schema, table, column, data_type}
-# report["comparison"]["type_mismatches"]   → list of {schema, table, column, source_type, destination_type}
-# report["yaml_gaps"]["tables_without_descriptions"]
-# report["yaml_gaps"]["columns_without_descriptions"]
+print(report["summary"])
+# {
+#   "missing_tables_count": 3,
+#   "missing_columns_count": 17,
+#   "type_mismatches_count": 2,
+#   "tables_without_descriptions_count": 24,
+#   "columns_without_descriptions_count": 312,
+# }
+```
+
+### Report Structure
+
+```python
+report["comparison"]["missing_tables"]     # [{schema, table, column_count}, ...]
+report["comparison"]["missing_columns"]    # [{schema, table, column, data_type}, ...]
+report["comparison"]["type_mismatches"]    # [{schema, table, column, source_type, destination_type}, ...]
+report["yaml_gaps"]["tables_without_descriptions"]
+report["yaml_gaps"]["columns_without_descriptions"]
+```
+
+### Reusing Already-Extracted Metadata
+
+If you've already extracted metadata earlier in your pipeline, pass it directly to avoid a second database round-trip:
+
+```python
+# Extract once
+with MetadataExtractor(**dest_config) as ext:
+    dest_db_meta = ext.extract_all_schemas(schema_filter=TARGET_SCHEMAS)
+
+# Compare without re-querying the destination database
+report = comparator.compare_and_generate_report(
+    source_schema_name="public",
+    dest_db_metadata=dest_db_meta,
+    source_db_metadata=dest_db_meta,    # also reuse for YAML gap detection
+)
+```
+
+### Cross-Database Comparison
+
+Source and destination can be **different database engines**. Type normalisation maps vendor-specific aliases before comparing, so `character varying` (PostgreSQL) and `varchar` (MySQL) do not produce a false mismatch.
+
+```python
+comparator = SchemaComparator(
+    source_config={"db_type": "postgres", ...},
+    destination_config={"db_type": "clickhouse", ...},
+)
 ```
 
 ### Batch Comparison
@@ -396,103 +433,70 @@ results = comparator.extract_and_compare_all(
 )
 ```
 
-### Cross-Database Comparison
-
-Source and destination can be **different database types**. Type normalisation maps vendor-specific aliases (e.g. PostgreSQL `character varying` → `varchar`, `int4` → `integer`) before comparing.
-
-```python
-comparator = SchemaComparator(
-    source_config={"db_type": "postgres", "host": "prod-pg", ...},
-    destination_config={"db_type": "mysql",    "host": "staging-mysql", ...},
-)
-```
-
 ---
 
-## 10. DDHelper — Output & Reporting Utility
+## 9. Reports: JSON, PDF, and Email
 
-`DDHelper` manages the standard output directory layout, JSON report persistence, PDF compilation, and email delivery in one class.
+`DDHelper` manages the standard output directory layout and handles all three report delivery mechanisms.
 
-### Directory Layout
-
-```
-<base_dir>/
-    models/
-    reports/
-        json/    ← Metadata_comparison_YYYY-MM-DD_HH-MM-SS.json
-        pdf/     ← Metadata_comparison_YYYY-MM-DD_HH-MM-SS.pdf
-```
-
-### Initialise
+### Setting Up DDHelper
 
 ```python
 from data_dictionary_builder import DDHelper
 
-helper = DDHelper()                  # base = current working directory
-helper = DDHelper(base_dir="/data")  # custom root
+helper = DDHelper(".")          # or pass a custom base directory
 
-# Access directory paths
-helper.models_dir        # Path object
-helper.reports_json_dir  # Path object
-helper.reports_pdf_dir   # Path object
-
-# Or as a dict
-dirs = helper.dirs
-# dirs["models"], dirs["reports_json"], dirs["reports_pdf"]
+# Directories created automatically:
+# ./models/
+# ./reports/json/
+# ./reports/pdf/
 ```
 
-### Save a JSON Report
+### Save a Report to JSON
 
 ```python
 json_path = helper.save_report(report)
 # → reports/json/Metadata_comparison_2024-03-05_10-30-42.json
 ```
 
-### Compile PDF
+### Compile a PDF
 
 ```python
-# Compile all JSON files in reports/json/ into one PDF
-pdf_path = helper.compile_pdf()
-
-# Compile only the most-recently saved report
+# Compile only the report from this run
 pdf_path = helper.compile_pdf(source_json=json_path)
 
-# Override output path
-pdf_path = helper.compile_pdf(output_pdf=Path("/tmp/my_report.pdf"))
+# Compile all JSON files in reports/json/ into one PDF
+pdf_path = helper.compile_pdf()
 ```
 
-Requires `reportlab`. Install with `pip install reportlab`.
+The PDF is paginated with a table of contents, summary tables, and complete data — no row limits, no truncation. Requires `reportlab` (`pip install reportlab`).
 
-The PDF contains:
-- Cover page with generation timestamp and report count
-- Table of contents
-- Per-report sections: summary table, missing tables, missing columns, type mismatches, documentation gaps
-
-### Send Email
+### Send by Email
 
 ```python
 helper.send_report_email(
     report=report,
-    pdf_path=pdf_path,                      # PDF attached; optional
-    subject="Nightly schema drift",
-    email_to="recipient@example.com",
+    pdf_path=pdf_path,                      # PDF is attached
+    subject="Nightly schema drift — prod",
+    email_to="data-team@company.com",
 )
 ```
 
-SMTP parameters can be supplied explicitly **or** read from environment variables:
+SMTP credentials are read from environment variables when not passed explicitly:
 
-| Parameter | Env var | Default |
+| Env var | Parameter | Default |
 |---|---|---|
-| `smtp_host` | `SMTP_HOST` | — |
-| `smtp_port` | `SMTP_PORT` | `587` |
-| `smtp_user` | `SMTP_USER` | `""` |
-| `smtp_password` | `SMTP_PASSWORD` | — |
-| `email_to` | `EMAIL_TO` | — |
+| `SMTP_HOST` | `smtp_host` | — |
+| `SMTP_PORT` | `smtp_port` | `587` |
+| `SMTP_USER` | `smtp_user` | `""` |
+| `SMTP_PASSWORD` | `smtp_password` | — |
+| `EMAIL_TO` | `email_to` | — |
 
-If `SMTP_HOST` or `email_to` / `EMAIL_TO` is not set, the email is silently skipped (returns `False`).
+If `SMTP_HOST` or the recipient address is missing, the call returns `False` silently — it will not raise an exception. This keeps pipelines that run without email configured from failing.
+
+### Override Credentials Explicitly
 
 ```python
-# Explicit credentials (override env vars)
 helper.send_report_email(
     report=report,
     pdf_path=pdf_path,
@@ -505,88 +509,9 @@ helper.send_report_email(
 )
 ```
 
----
+### Using `EmailSender` Directly
 
-## 11. ExecutionTimer — Performance Timing
-
-`ExecutionTimer` tracks wall-clock time for named tasks and prints a formatted summary.
-
-### Basic Usage
-
-```python
-from data_dictionary_builder import ExecutionTimer
-
-timer = ExecutionTimer()    # clock starts here
-
-with timer.task("Connect & extract"):
-    with MetadataExtractor(**config) as ext:
-        db_meta = ext.extract_all_schemas(parallel_workers=8)
-
-with timer.task("Generate YAML"):
-    gen.generate_yaml_files(db_meta)
-
-with timer.task("Schema comparison"):
-    report = comparator.compare_and_generate_report("public")
-
-timer.summary()
-```
-
-Example output:
-
-```
-────────────────────────────────────────────────
-  Execution Summary
-────────────────────────────────────────────────
-  Connect & extract                      2.341s
-  Generate YAML                          0.087s
-  Schema comparison                      1.203s
-────────────────────────────────────────────────
-  TOTAL                                  3.631s
-────────────────────────────────────────────────
-```
-
-Duration format: `0.123s` / `1m 4.5s` / `2h 3m 15s` depending on magnitude.
-
-### Custom Title
-
-```python
-timer.summary("ClickHouse Test Suite — Execution Summary")
-```
-
-### Programmatic Access
-
-```python
-task_timings, overall_seconds = timer.totals()
-
-for name, secs in task_timings:
-    print(f"{name}: {secs:.3f}s")
-
-print(f"Overall: {overall_seconds:.3f}s")
-```
-
-`timer.elapsed` returns the total seconds since the timer was created (read-only property, no side effects).
-
-### Nested Tasks
-
-`ExecutionTimer` supports any nesting depth — including tasks within tasks — and records each `with timer.task(...)` block independently:
-
-```python
-with timer.task("Full pipeline"):
-    with timer.task("Extract"):
-        ...
-    with timer.task("Generate"):
-        ...
-```
-
-> **Note:** Durations are measured in **wall-clock time** (not CPU time), so parallel threads contribute to a single task's elapsed time rather than multiplying it.
-
----
-
-## 12. Email Notifications
-
-### `EmailSender` (direct usage)
-
-Use `EmailSender` directly when you need full control over SMTP settings without going through `DDHelper`.
+For full control without `DDHelper`:
 
 ```python
 from data_dictionary_builder import EmailSender
@@ -595,114 +520,136 @@ sender = EmailSender(
     smtp_host="smtp.gmail.com",
     smtp_port=587,
     sender_email="you@gmail.com",
-    sender_password="app-password",    # Gmail App Password
+    sender_password="app-password",
     use_tls=True,
-    use_ssl=False,
 )
 
-# Send a formatted comparison report (HTML + plain text)
-ok = sender.send_comparison_report(
-    recipient_emails=["team@example.com", "manager@example.com"],
+sender.send_comparison_report(
+    recipient_emails=["team@example.com"],
     report=report,
-    subject="Weekly Schema Drift Report",
-    attachments=["/path/to/report.pdf"],
-)
-
-# Send a completely custom email
-ok = sender.send_email(
-    recipient_emails=["user@example.com"],
-    subject="Custom notification",
-    text_body="Plain-text fallback.",
-    html_body="<h1>HTML version</h1>",
-    attachments=["/path/to/file.pdf"],
+    subject="Weekly drift report",
+    attachments=[str(pdf_path)],
 )
 ```
 
-### SMTP Provider Examples
+### SMTP Provider Quick Reference
 
-**Gmail (App Password)**
-```python
-EmailSender(smtp_host="smtp.gmail.com", smtp_port=587,
-            sender_email="you@gmail.com", sender_password="xxxx xxxx xxxx xxxx",
-            use_tls=True)
-```
-
-**Office 365**
-```python
-EmailSender(smtp_host="smtp.office365.com", smtp_port=587,
-            sender_email="you@company.com", sender_password="password",
-            use_tls=True)
-```
-
-**AWS SES**
-```python
-EmailSender(smtp_host="email-smtp.us-east-1.amazonaws.com", smtp_port=587,
-            sender_email="verified@yourdomain.com",
-            sender_password="SES-SMTP-password", use_tls=True)
-```
-
-**SSL (port 465)**
-```python
-EmailSender(smtp_host="mail.example.com", smtp_port=465,
-            sender_email="you@example.com", sender_password="password",
-            use_tls=False, use_ssl=True)
-```
-
-### Using Environment Variables
-
-Set these in your `.env` file or shell environment for credential-free code:
-
-```bash
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=you@gmail.com
-SMTP_PASSWORD=xxxx xxxx xxxx xxxx
-EMAIL_TO=recipient@example.com
-```
-
-Then call `helper.send_report_email(report=report, pdf_path=pdf_path)` with no other arguments.
+| Provider | Host | Port | Notes |
+|---|---|---|---|
+| Gmail | `smtp.gmail.com` | `587` | Use an [App Password](https://support.google.com/accounts/answer/185833), not your account password |
+| Office 365 | `smtp.office365.com` | `587` | — |
+| AWS SES | `email-smtp.<region>.amazonaws.com` | `587` | Use SES SMTP credentials |
+| SSL (any) | your host | `465` | Set `use_tls=False, use_ssl=True` |
 
 ---
 
-## 13. Airflow Integration
+## 10. Timing Your Pipeline
 
-### Using `DatabaseMetadata.to_dict()` / `from_dict()` for XCom
+Wrap any block of code in `timer.task()` to measure and report its duration:
+
+```python
+from data_dictionary_builder import ExecutionTimer
+
+timer = ExecutionTimer()
+
+with timer.task("Connection test"):
+    ok = ext.test_connection()
+
+with timer.task("Metadata extraction"):
+    db_meta = ext.extract_all_schemas(parallel_workers=8)
+
+with timer.task("YAML generation"):
+    gen.generate_yaml_files(db_meta)
+
+with timer.task("Schema comparison"):
+    report = comparator.compare_and_generate_report("public")
+
+with timer.task("PDF + email"):
+    json_path = helper.save_report(report)
+    pdf_path  = helper.compile_pdf(source_json=json_path)
+    helper.send_report_email(report=report, pdf_path=pdf_path)
+
+timer.summary("Nightly Pipeline")
+```
+
+```
+────────────────────────────────────────────────
+  Nightly Pipeline
+────────────────────────────────────────────────
+  Connection test               0.312s
+  Metadata extraction           1.984s
+  YAML generation               0.091s
+  Schema comparison             0.743s
+  PDF + email                   2.103s
+────────────────────────────────────────────────
+  TOTAL                         5.233s
+────────────────────────────────────────────────
+```
+
+Durations auto-format: `0.123s` / `1m 4.5s` / `2h 3m 15s`.
+
+To access timings programmatically:
+
+```python
+task_timings, overall_seconds = timer.totals()
+# task_timings → [("Connection test", 0.312), ("Metadata extraction", 1.984), ...]
+```
+
+---
+
+## 11. Airflow Integration
+
+`DatabaseMetadata` objects serialise to and from plain dicts via `to_dict()` / `from_dict()`, making them compatible with Airflow XCom out of the box.
 
 ```python
 from airflow.decorators import dag, task
-from data_dictionary_builder import MetadataExtractor, DatabaseMetadata, YAMLGenerator, DDHelper
+from data_dictionary_builder import (
+    MetadataExtractor, DatabaseMetadata, YAMLGenerator,
+    SchemaComparator, DDHelper,
+)
 
 @dag(schedule="@daily")
 def metadata_pipeline():
 
     @task
     def extract():
-        with MetadataExtractor(db_type="postgres", host="prod-db",
-                               database="mydb", user="ro", password="{{ var.value.db_pass }}") as ext:
+        with MetadataExtractor(
+            db_type="postgres", host="{{ var.value.db_host }}",
+            database="{{ var.value.db_name }}", user="{{ var.value.db_user }}",
+            password="{{ var.value.db_pass }}",
+        ) as ext:
             db_meta = ext.extract_all_schemas(
                 schema_filter=["public", "analytics"],
                 parallel_workers=8,
             )
-        return db_meta.to_dict()   # XCom-serialisable
+        return db_meta.to_dict()     # XCom-serialisable dict
 
     @task
     def generate_yaml(db_meta_dict: dict):
         helper  = DDHelper("/data/dbt")
-        db_meta = DatabaseMetadata.from_dict(db_meta_dict)
+        db_meta = DatabaseMetadata.from_dict(db_meta_dict)   # deserialise
         gen     = YAMLGenerator(output_dir=str(helper.models_dir))
         gen.generate_yaml_files(db_meta)
 
     @task
     def compare_and_report(db_meta_dict: dict):
-        helper = DDHelper("/data/dbt")
-        report = SchemaComparator(
-            source_config={"db_type": "postgres", "host": "prod-db", ...},
-            destination_config={"db_type": "postgres", "host": "staging-db", ...},
-        ).compare_and_generate_report("public", include_yaml_gaps=True)
+        helper    = DDHelper("/data/dbt")
+        dest_meta = DatabaseMetadata.from_dict(db_meta_dict)
+        comparator = SchemaComparator(
+            source_config={"db_type": "postgres", "host": "{{ var.value.prod_host }}", ...},
+            destination_config={"db_type": "postgres", "host": "{{ var.value.staging_host }}", ...},
+        )
+        report    = comparator.compare_and_generate_report(
+            "public",
+            dest_db_metadata=dest_meta,
+            include_yaml_gaps=True,
+        )
         json_path = helper.save_report(report)
         pdf_path  = helper.compile_pdf(source_json=json_path)
-        helper.send_report_email(report=report, pdf_path=pdf_path,
-                                 email_to="data-team@example.com")
+        helper.send_report_email(
+            report=report, pdf_path=pdf_path,
+            email_to="{{ var.value.alert_email }}",
+        )
 
     raw = extract()
     generate_yaml(raw)
@@ -711,48 +658,44 @@ def metadata_pipeline():
 metadata_pipeline()
 ```
 
-See `examples/airflow_dag_example.py` for a complete implementation.
+See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complete implementation using `PythonOperator`.
 
 ---
 
-## 14. API Reference
+## 12. API Reference
 
 ### `MetadataExtractor(db_type, **connection_params)`
 
-| Method | Signature | Description |
+| Method | Returns | Description |
 |---|---|---|
-| `connect()` | `→ None` | Open database connection |
-| `disconnect()` | `→ None` | Close database connection |
-| `test_connection()` | `→ bool` | Verify connectivity |
-| `get_schemas_list()` | `→ List[str]` | List all schema names |
-| `get_tables_list(schema_name)` | `→ List[str]` | List tables in a schema |
-| `extract_schema(schema_name)` | `→ SchemaMetadata` | Full schema metadata |
-| `extract_table(schema, table)` | `→ TableMetadata` | Single table metadata |
-| `extract_all_schemas(schema_filter, parallel_workers)` | `→ DatabaseMetadata` | Extract all (or filtered) schemas; parallel |
-
-Context-manager protocol: `__enter__` calls `connect()`, `__exit__` calls `disconnect()`.
+| `test_connection()` | `bool` | Verify connectivity |
+| `get_schemas_list()` | `List[str]` | All schema names |
+| `get_tables_list(schema_name)` | `List[str]` | Table names in a schema |
+| `extract_table(schema, table)` | `TableMetadata` | Single table |
+| `extract_schema(schema_name)` | `SchemaMetadata` | Full schema |
+| `extract_all_schemas(schema_filter, parallel_workers)` | `DatabaseMetadata` | All filtered schemas in parallel |
 
 ---
 
 ### `YAMLGenerator(output_dir)`
 
-| Method | Signature | Description |
+| Method | Returns | Description |
 |---|---|---|
-| `generate_yaml_files(db_meta)` | `→ List[str]` | One YAML file per schema; smart merge |
-| `generate_single_yaml(db_meta, filename)` | `→ str` | One combined YAML file |
-| `generate_schema_yaml(schema, filename)` | `→ str` | YAML for a single schema |
-| `get_tables_without_descriptions(db_meta)` | `→ List[str]` | Undocumented tables |
-| `get_columns_without_descriptions(db_meta)` | `→ List[dict]` | Undocumented columns |
+| `generate_yaml_files(db_meta)` | `List[str]` | One YAML per schema; smart merge |
+| `generate_single_yaml(db_meta, filename)` | `str` | One combined file |
+| `generate_schema_yaml(schema, filename)` | `str` | YAML for one schema |
+| `get_tables_without_descriptions(db_meta)` | `List[str]` | Undocumented table names |
+| `get_columns_without_descriptions(db_meta)` | `List[dict]` | Undocumented columns |
 
 ---
 
 ### `SchemaComparator(source_config, destination_config, yaml_output_dir=None)`
 
-| Method | Signature | Description |
+| Method | Returns | Description |
 |---|---|---|
-| `compare_schemas(source_schema, dest_schema=None)` | `→ ComparisonResult` | Structured diff object |
-| `compare_and_generate_report(source_schema_name, destination_schema_name=None, include_yaml_gaps=False)` | `→ dict` | Full report dict |
-| `extract_and_compare_all(source_schemas, destination_schemas)` | `→ List[ComparisonResult]` | Batch comparison |
+| `compare_schemas(source_schema, dest_schema=None, dest_db_metadata=None)` | `ComparisonResult` | Structured diff |
+| `compare_and_generate_report(source_schema_name, destination_schema_name=None, include_yaml_gaps=False, source_db_metadata=None, dest_db_metadata=None)` | `dict` | Full report dict |
+| `extract_and_compare_all(source_schemas, destination_schemas)` | `List[ComparisonResult]` | Batch diff |
 
 ---
 
@@ -760,13 +703,12 @@ Context-manager protocol: `__enter__` calls `connect()`, `__exit__` calls `disco
 
 | Attribute / Method | Description |
 |---|---|
-| `base_dir` | `Path` — root directory |
-| `dirs` | `dict` — `{models, reports, reports_json, reports_pdf}` |
-| `models_dir` | `Path` shortcut |
-| `reports_json_dir` | `Path` shortcut |
-| `reports_pdf_dir` | `Path` shortcut |
-| `save_report(report, dt=None)` | Serialise report to JSON; returns `Path` |
-| `compile_pdf(source_json=None, output_pdf=None)` | Compile JSON → PDF; returns `Path` or `None` |
+| `models_dir` | `Path` to the YAML output directory |
+| `reports_json_dir` | `Path` to the JSON report directory |
+| `reports_pdf_dir` | `Path` to the PDF report directory |
+| `dirs` | Dict with all four paths |
+| `save_report(report, dt=None)` | Write report to JSON; returns `Path` |
+| `compile_pdf(source_json=None, output_pdf=None)` | JSON → PDF; returns `Path` or `None` |
 | `send_report_email(report, pdf_path=None, subject=None, *, smtp_host, smtp_port, smtp_user, smtp_password, email_to, use_tls)` | Send email; all SMTP params fall back to env vars |
 
 ---
@@ -775,56 +717,85 @@ Context-manager protocol: `__enter__` calls `connect()`, `__exit__` calls `disco
 
 | Attribute / Method | Description |
 |---|---|
-| `task(name)` | Context manager; records named duration |
-| `elapsed` | Property — seconds since timer was created |
-| `totals()` | Returns `([(name, secs), …], overall_secs)` |
-| `summary(title="Execution Summary")` | Print formatted table to stdout |
+| `task(name)` | Context manager recording a named duration |
+| `elapsed` | Seconds since timer was created (read-only) |
+| `totals()` | `([(name, secs), …], overall_secs)` |
+| `summary(title="Execution Summary")` | Print formatted table |
 
 ---
 
 ### `EmailSender(smtp_host, smtp_port, sender_email, sender_password=None, use_tls=True, use_ssl=False)`
 
-| Method | Signature | Description |
+| Method | Returns | Description |
 |---|---|---|
-| `send_comparison_report(recipient_emails, report, subject=None, attachments=None)` | `→ bool` | Formatted HTML+text report email |
-| `send_email(recipient_emails, subject, text_body, html_body=None, attachments=None)` | `→ bool` | Generic email with optional attachments |
+| `send_comparison_report(recipient_emails, report, subject=None, attachments=None)` | `bool` | Send formatted HTML report |
+| `send_email(recipient_emails, subject, text_body, html_body=None, attachments=None)` | `bool` | Send custom email |
 
 ---
 
-## 15. Troubleshooting
+### `DatabaseMetadata`
 
-### Connection Issues
+| Method | Description |
+|---|---|
+| `to_dict()` | Serialise to a plain dict (JSON-safe) |
+| `from_dict(data)` *(classmethod)* | Reconstruct from a dict produced by `to_dict()` |
+| `get_schema(schema_name)` | Look up a `SchemaMetadata` by name |
+| `add_schema(schema)` | Append a `SchemaMetadata` |
 
-**ClickHouse:** Use the native protocol port (default `9440` for TLS, `9000` for plain). The HTTP port `8123` is not supported. Pass `secure=True, verify=False` for self-signed certificates.
+---
 
-**Google Cloud Spanner:** Set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json` or run `gcloud auth application-default login`.
+## 13. Troubleshooting
 
-**PostgreSQL / MySQL:** Ensure the database user has `SELECT` on `information_schema` and the target schemas.
+### Connection Problems
 
-### Performance
+**ClickHouse — `Connection refused` or timeout**
+Use the **native protocol port** — `9440` (TLS) or `9000` (plain). The HTTP port `8123` is not supported by this library. Always set `secure=True` for cloud instances and `verify=False` if using self-signed certificates.
 
-- Always use `schema_filter` to limit extraction to relevant schemas.
-- Increase `parallel_workers` to speed up large databases (tune to your DB's connection limit).
-- Row counts in PostgreSQL use `pg_class` estimates, which are fast but approximate.
-- Use `ExecutionTimer` to identify which step is the bottleneck.
+**Google Cloud Spanner — `google.auth.exceptions.DefaultCredentialsError`**
+Run `gcloud auth application-default login`, or set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json`.
+
+**PostgreSQL / MySQL — `permission denied`**
+The database user needs `SELECT` privileges on `information_schema` and all target schemas. A read-only role is sufficient.
+
+---
+
+### Slow Extraction
+
+- Always use `schema_filter` to limit extraction to the schemas you need.
+- Increase `parallel_workers` — the default is conservative. Try `parallel_workers=10` and tune based on your database's connection limit.
+- Use `ExecutionTimer` to find which step is the bottleneck.
+- PostgreSQL row counts use `pg_class.reltuples` estimates — they are fast but approximate.
+
+---
 
 ### YAML Issues
 
-- Descriptions containing colons (`:`) or special YAML characters are handled automatically.
-- Re-running `generate_yaml_files` will **not** overwrite user-written descriptions; use a text editor to remove generated content if needed.
-- Validate generated files with `yamllint ./dbt_models/*.yml`.
+**My descriptions were overwritten.**
+They should not be — `generate_yaml_files()` always merges with existing files. Check that you are writing to the same `output_dir` you read from. If you generate to `./models/` but the existing file is somewhere else, a new blank file is created instead of merging.
+
+**YAML validation errors after generation.**
+Run `yamllint ./models/*.yml`. Descriptions containing YAML special characters (`:`, `#`, `{`) are handled automatically — if you see errors, they likely come from manual edits.
+
+---
 
 ### Email Issues
 
-- **Gmail:** Use an [App Password](https://support.google.com/accounts/answer/185833), not your account password. Requires 2-Step Verification enabled.
-- **SSL vs TLS:** Port 587 uses STARTTLS (`use_tls=True, use_ssl=False`). Port 465 uses implicit SSL (`use_tls=False, use_ssl=True`).
-- If `helper.send_report_email()` returns `False` with no error, verify that `SMTP_HOST` and either `email_to` (parameter) or `EMAIL_TO` (env var) are set.
-- PDF attachment requires `reportlab` (`pip install reportlab`).
+**`send_report_email()` returns `False` with no error.**
+Check that `SMTP_HOST` is set and that either `email_to` (parameter) or `EMAIL_TO` (env var) is set. Missing either causes a silent skip.
 
-### PDF Compilation
+**Gmail authentication failure.**
+Use an [App Password](https://support.google.com/accounts/answer/185833) — not your Google account password. App Passwords require 2-Step Verification to be enabled on your account.
 
-`compile_pdf()` returns `None` when:
-- `reportlab` is not installed.
-- No `*.json` files exist in `reports/json/`.
+**Wrong port / SSL mismatch.**
+Port `587` uses STARTTLS: set `use_tls=True, use_ssl=False`.
+Port `465` uses implicit SSL: set `use_tls=False, use_ssl=True`.
 
-Install reportlab: `pip install reportlab`.
+---
+
+### PDF Issues
+
+**`compile_pdf()` returns `None`.**
+Either `reportlab` is not installed (`pip install reportlab`) or there are no `*.json` files in `reports/json/`.
+
+**PDF is missing some rows.**
+The PDF always includes all rows. If rows appear cut off, verify you are using `compile_pdf(source_json=json_path)` to compile only the current run's JSON rather than picking up an older, partial file.
