@@ -42,9 +42,20 @@ ddgen install all
 | **SQLite** | *(built-in)* | `sqlite3` (stdlib) |
 | **PostgreSQL** | `[postgres]` | `psycopg2-binary` |
 | **MySQL / MariaDB** | `[mysql]` | `PyMySQL` |
-| **ClickHouse** | `[clickhouse]` | `clickhouse-connect` (HTTP/HTTPS, default) |
-| **ClickHouse** | `[clickhouse-native]` | `clickhouse-driver` (native TCP) |
+| **ClickHouse** | `[clickhouse]` | `clickhouse-connect` — HTTP/HTTPS, default |
+| **ClickHouse** | `[clickhouse-native]` | `clickhouse-driver` — native TCP |
 | **Google Cloud Spanner** | `[spanner]` | `google-cloud-spanner` |
+
+### ClickHouse Connection Quick Reference
+
+| Scenario | `transport` | Port | `secure` |
+|---|---|---|---|
+| ClickHouse Cloud (HTTP) | `"http"` | 8443 | `True` |
+| Self-hosted HTTP | `"http"` | 8123 | — |
+| Altinity / on-prem TLS | `"native"` | 9440 | `True` |
+| Self-hosted native TCP | `"native"` | 9000 | — |
+
+If `port` is omitted, it is chosen automatically based on `transport` and `secure`. If `transport` is omitted, HTTP is used when `clickhouse-connect` is installed, otherwise native TCP.
 
 ---
 
@@ -82,7 +93,8 @@ ddgen connectors
 
 # Install a connector
 ddgen install postgres
-ddgen install clickhouse
+ddgen install clickhouse            # HTTP/HTTPS driver (clickhouse-connect)
+ddgen install clickhouse-native     # native TCP driver (clickhouse-driver)
 ddgen install all
 
 # Show library version and connector summary
@@ -150,6 +162,14 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 Set these in a `.env` file (see `tests/.env.example`) or in your shell:
 
 ```bash
+# ClickHouse — used by the test suite
+clickhouse_host=your-host.clickhouse.cloud
+clickhouse_port=8443              # omit to auto-select based on transport + secure
+clickhouse_transport=http         # "http" or "native" — omit to auto-detect
+clickhouse_user=default
+clickhouse_password=your_password
+clickhouse_db=default             # omit for server-mode (scan all databases)
+
 # SMTP — used by DDHelper.send_report_email() when no credentials are passed explicitly
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587

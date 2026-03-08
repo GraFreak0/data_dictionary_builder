@@ -148,13 +148,20 @@ Requires `PyMySQL`. Omit `database` to scan all databases on the server.
 
 Two transports are supported. Pass `transport` explicitly or omit it to auto-detect (HTTP preferred when both drivers are installed).
 
+**Port defaults** — if you don't pass `port`, the connector picks automatically:
+
+| Transport | `secure=True` | `secure` not set |
+|---|---|---|
+| HTTP (`clickhouse-connect`) | **8443** | 8123 |
+| Native TCP (`clickhouse-driver`) | **9440** | 9000 |
+
 **HTTP / HTTPS — `clickhouse-connect` (recommended for cloud)**
 
 ```python
 with MetadataExtractor(
     db_type="clickhouse",
     host="my-cluster.clickhouse.cloud",
-    port=8443,              # HTTPS — use 8123 for plain HTTP
+    # port omitted — auto-selected as 8443 because secure=True
     database="default",
     user="default",
     password="secret",
@@ -173,7 +180,7 @@ Install: `ddgen install clickhouse`
 with MetadataExtractor(
     db_type="clickhouse",
     host="my-cluster.internal",
-    port=9440,              # native TLS — use 9000 for plain TCP
+    # port omitted — auto-selected as 9440 because secure=True
     database="default",
     user="default",
     password="secret",
@@ -185,7 +192,7 @@ with MetadataExtractor(
 
 Install: `ddgen install clickhouse-native`
 
-Requires `clickhouse-connect` (HTTP/HTTPS transport). Install with `ddgen install clickhouse`. Metadata is read from `system.columns`.
+Both transports read metadata from `system.columns` and `system.tables`. If `transport` is omitted, the connector auto-detects whichever driver is installed (HTTP preferred).
 
 ### Google Cloud Spanner
 
@@ -785,7 +792,17 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 ### Connection Problems
 
 **ClickHouse — `Connection refused` or timeout**
-Check which transport you're using. For `transport="http"` (clickhouse-connect) use port `8123` (plain) or `8443` (HTTPS). For `transport="native"` (clickhouse-driver) use port `9000` (plain) or `9440` (native TLS). Pass `secure=True` for cloud instances and `verify=False` for self-signed certificates. If `transport` is omitted, the connector auto-detects whichever driver is installed (HTTP preferred).
+
+First, confirm which transport and port go together:
+
+| Scenario | `transport` | Port | `secure` |
+|---|---|---|---|
+| ClickHouse Cloud (HTTP) | `"http"` | **8443** | `True` |
+| Self-hosted HTTP | `"http"` | 8123 | — |
+| Altinity / on-prem TLS | `"native"` | **9440** | `True` |
+| Self-hosted native TCP | `"native"` | 9000 | — |
+
+If you omit `port`, the connector picks the right default automatically based on `transport` and `secure`. Pass `verify=False` for self-signed certificates.
 
 **Google Cloud Spanner — `google.auth.exceptions.DefaultCredentialsError`**
 Run `gcloud auth application-default login`, or set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json`.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data-dictionary-builder"
-version = "1.0.2"
+version = "1.0.3"
 description = "Extract database metadata, generate dbt-compatible YAML, compare schemas, and deliver reports — all in a single Python import."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -47,6 +47,7 @@ dependencies = [
     # Reporting & email
     "reportlab>=4.0.0",
     "secure-smtplib>=0.1.1",
+    "numpy",
 ]
 
 [project.optional-dependencies]
@@ -70,6 +71,7 @@ all = [
     "google-cloud-spanner>=3.40.0",
     "reportlab>=4.0.0",
     "secure-smtplib>=0.1.1",
+    "numpy",
 ]
 
 # ── Development tools ─────────────────────────────────────────────────────────

@@ -57,8 +57,9 @@ class ClickHouseConnector(BaseConnector):
 
         Args:
             host:      Server hostname or IP.
-            port:      Port number. Defaults to 8123 (HTTP) or 9000 (native TCP)
-                       based on the resolved transport.
+            port:      Port number. Defaults to 8443 (HTTPS/secure) or 8123 (HTTP)
+                       for HTTP transport; 9440 (TLS) or 9000 for native TCP.
+                       Automatically chosen based on ``secure`` kwarg if omitted.
             database:  Database name. Pass ``None`` for server-mode scanning.
             user:      Username. Default: ``'default'``.
             password:  Password.
@@ -71,9 +72,14 @@ class ClickHouseConnector(BaseConnector):
         """
         self._transport = self._resolve_transport(transport)
 
-        # Apply transport-appropriate default port if none was given
+        # Apply transport-appropriate default port if none was given.
+        # HTTP: 8443 when secure=True (ClickHouse Cloud / TLS), else 8123.
+        # Native TCP: 9440 when secure=True, else 9000.
         if port is None:
-            port = 8123 if self._transport == "http" else 9000
+            if self._transport == "http":
+                port = 8443 if kwargs.get("secure") else 8123
+            else:
+                port = 9440 if kwargs.get("secure") else 9000
 
         super().__init__(
             host=host, port=port, database=database,

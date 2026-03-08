@@ -56,22 +56,29 @@ EMOJI     = "🔷 "
 EMAIL_TO  = "j_oyin@yahoo.com"
 
 # ── Shared / fallback connection values ─────────────────────────────────────
-_CH_HOST     = os.getenv("clickhouse_host", "localhost")
-_CH_PORT     = int(os.getenv("clickhouse_port", 8123))
-_CH_USER     = os.getenv("clickhouse_user", "default")
-_CH_PASSWORD = os.getenv("clickhouse_password", "")
-_CH_DB       = os.getenv("clickhouse_db")          # None → server mode
+_CH_HOST      = os.getenv("clickhouse_host", "localhost")
+_CH_PORT_RAW  = os.getenv("clickhouse_port")          # None → let connector pick
+_CH_PORT      = int(_CH_PORT_RAW) if _CH_PORT_RAW else None
+_CH_USER      = os.getenv("clickhouse_user", "default")
+_CH_PASSWORD  = os.getenv("clickhouse_password", "")
+_CH_DB        = os.getenv("clickhouse_db")             # None → server mode
+_CH_TRANSPORT = os.getenv("clickhouse_transport")      # "http" | "native" | None
 
 # ── Source connection ────────────────────────────────────────────────────────
 SOURCE_CONFIG = {
     "db_type":  CONNECTOR,
     "host":     os.getenv("SOURCE_CLICKHOUSE_HOST")     or _CH_HOST,
-    "port":     int(os.getenv("SOURCE_CLICKHOUSE_PORT") or _CH_PORT),
     "user":     os.getenv("SOURCE_CLICKHOUSE_USER")     or _CH_USER,
     "password": os.getenv("SOURCE_CLICKHOUSE_PASSWORD") or _CH_PASSWORD,
     "secure":   True,
     "verify":   False,
 }
+_src_port = os.getenv("SOURCE_CLICKHOUSE_PORT") or _CH_PORT
+if _src_port:
+    SOURCE_CONFIG["port"] = int(_src_port)
+_src_transport = os.getenv("SOURCE_CLICKHOUSE_TRANSPORT") or _CH_TRANSPORT
+if _src_transport:
+    SOURCE_CONFIG["transport"] = _src_transport
 _src_db = os.getenv("SOURCE_CLICKHOUSE_DB") or _CH_DB
 if _src_db:
     SOURCE_CONFIG["database"] = _src_db
@@ -80,12 +87,17 @@ if _src_db:
 DEST_CONFIG = {
     "db_type":  CONNECTOR,
     "host":     os.getenv("DEST_CLICKHOUSE_HOST")     or _CH_HOST,
-    "port":     int(os.getenv("DEST_CLICKHOUSE_PORT") or _CH_PORT),
     "user":     os.getenv("DEST_CLICKHOUSE_USER")     or _CH_USER,
     "password": os.getenv("DEST_CLICKHOUSE_PASSWORD") or _CH_PASSWORD,
     "secure":   True,
     "verify":   False,
 }
+_dst_port = os.getenv("DEST_CLICKHOUSE_PORT") or _CH_PORT
+if _dst_port:
+    DEST_CONFIG["port"] = int(_dst_port)
+_dst_transport = os.getenv("DEST_CLICKHOUSE_TRANSPORT") or _CH_TRANSPORT
+if _dst_transport:
+    DEST_CONFIG["transport"] = _dst_transport
 _dst_db = os.getenv("DEST_CLICKHOUSE_DB") or _CH_DB
 if _dst_db:
     DEST_CONFIG["database"] = _dst_db
