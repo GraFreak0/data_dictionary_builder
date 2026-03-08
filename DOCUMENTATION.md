@@ -21,16 +21,16 @@
 ## 1. Installation
 
 ```bash
-# Install from PyPI (once published)
+# Full install — all connectors included by default
 pip install data-dictionary-builder
 
-# Install from source
+# Install from source (also installs all connectors)
 git clone https://github.com/GraFreak0/data_dictionary_builder.git
 cd data_dictionary_builder
 pip install -e .
 ```
 
-Only install the drivers you need — they are all optional:
+For a **minimal install**, use `--no-deps` then add only what you need:
 
 ```bash
 pip install psycopg2-binary          # PostgreSQL
@@ -135,6 +135,17 @@ Requires `PyMySQL`. Omit `database` to scan all databases on the server.
 
 ### ClickHouse
 
+Two transports are supported. Pass `transport` explicitly or omit it to auto-detect (HTTP preferred when both drivers are installed).
+
+**Port defaults** — if you don't pass `port`, the connector picks automatically:
+
+| Transport | `secure=True` | `secure` not set |
+|---|---|---|
+| HTTP (`clickhouse-connect`) | **8443** | 8123 |
+| Native TCP (`clickhouse-driver`) | **9440** | 9000 |
+
+**HTTP / HTTPS — `clickhouse-connect` (recommended for cloud)**
+
 ```python
 with MetadataExtractor(
     db_type="clickhouse",
@@ -143,8 +154,8 @@ with MetadataExtractor(
     database="default",
     user="default",
     password="secret",
-    secure=True,        # TLS
-    verify=False,       # skip cert check for self-signed certs
+    transport="native",     # requires clickhouse-driver
+    secure=True,
 ) as ext:
     ...
 ```

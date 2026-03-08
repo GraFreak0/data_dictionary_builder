@@ -11,8 +11,17 @@ native TCP protocol driver. Install with:
 
 import clickhouse_connect
 from typing import List, Optional, Dict, Any
+
 from .base import BaseConnector
 from ..metadata.models import SchemaMetadata, TableMetadata, ColumnMetadata
+
+
+def _http_available() -> bool:
+    return importlib.util.find_spec("clickhouse_connect") is not None
+
+
+def _native_available() -> bool:
+    return importlib.util.find_spec("clickhouse_driver") is not None
 
 
 class ClickHouseConnector(BaseConnector):
@@ -40,6 +49,17 @@ class ClickHouseConnector(BaseConnector):
                       ``clickhouse_connect.get_client()``, e.g.
                       ``secure=True``, ``verify=False``.
         """
+        self._transport = self._resolve_transport(transport)
+
+        # Apply transport-appropriate default port if none was given.
+        # HTTP: 8443 when secure=True (ClickHouse Cloud / TLS), else 8123.
+        # Native TCP: 9440 when secure=True, else 9000.
+        if port is None:
+            if self._transport == "http":
+                port = 8443 if kwargs.get("secure") else 8123
+            else:
+                port = 9440 if kwargs.get("secure") else 9000
+
         super().__init__(
             host=host,
             port=port,
@@ -266,7 +286,7 @@ class ClickHouseConnector(BaseConnector):
 
             schema_metadata.add_table(table_meta)
 
-        return schema_metadata
+    # ── Utility ───────────────────────────────────────────────────────────────
 
     # ── Utility ───────────────────────────────────────────────────────────────
 
