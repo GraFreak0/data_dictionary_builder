@@ -11,25 +11,24 @@ A Python library that automates database documentation — extract live schema m
 ## Installation
 
 ```bash
-# Full install — all connectors included by default
+# Core library (SQLite works out of the box)
 pip install data-dictionary-builder
 
-# Minimal install — add only the connectors you need
-pip install data-dictionary-builder --no-deps
+# With the connectors you need
 pip install "data-dictionary-builder[postgres]"
 pip install "data-dictionary-builder[mysql]"
-pip install "data-dictionary-builder[clickhouse]"          # HTTP/HTTPS (recommended)
-pip install "data-dictionary-builder[clickhouse-native]"   # native TCP
+pip install "data-dictionary-builder[clickhouse]"
 pip install "data-dictionary-builder[spanner]"
-pip install "data-dictionary-builder[all]"                 # everything incl. both CH drivers
+
+# Everything at once
+pip install "data-dictionary-builder[all]"
 ```
 
-Or install connectors at any time using the CLI:
+Or use the CLI to install connectors after the fact:
 
 ```bash
 ddgen install postgres
-ddgen install clickhouse            # HTTP/HTTPS driver
-ddgen install clickhouse-native     # native TCP driver
+ddgen install clickhouse
 ddgen install all
 ```
 
@@ -42,20 +41,8 @@ ddgen install all
 | **SQLite** | *(built-in)* | `sqlite3` (stdlib) |
 | **PostgreSQL** | `[postgres]` | `psycopg2-binary` |
 | **MySQL / MariaDB** | `[mysql]` | `PyMySQL` |
-| **ClickHouse** | `[clickhouse]` | `clickhouse-connect` — HTTP/HTTPS, default |
-| **ClickHouse** | `[clickhouse-native]` | `clickhouse-driver` — native TCP |
+| **ClickHouse** | `[clickhouse]` | `clickhouse-connect` (HTTP/HTTPS) |
 | **Google Cloud Spanner** | `[spanner]` | `google-cloud-spanner` |
-
-### ClickHouse Connection Quick Reference
-
-| Scenario | `transport` | Port | `secure` |
-|---|---|---|---|
-| ClickHouse Cloud (HTTP) | `"http"` | 8443 | `True` |
-| Self-hosted HTTP | `"http"` | 8123 | — |
-| Altinity / on-prem TLS | `"native"` | 9440 | `True` |
-| Self-hosted native TCP | `"native"` | 9000 | — |
-
-If `port` is omitted, it is chosen automatically based on `transport` and `secure`. If `transport` is omitted, HTTP is used when `clickhouse-connect` is installed, otherwise native TCP.
 
 ---
 
@@ -93,8 +80,7 @@ ddgen connectors
 
 # Install a connector
 ddgen install postgres
-ddgen install clickhouse            # HTTP/HTTPS driver (clickhouse-connect)
-ddgen install clickhouse-native     # native TCP driver (clickhouse-driver)
+ddgen install clickhouse
 ddgen install all
 
 # Show library version and connector summary
@@ -162,14 +148,6 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 Set these in a `.env` file (see `tests/.env.example`) or in your shell:
 
 ```bash
-# ClickHouse — used by the test suite
-clickhouse_host=your-host.clickhouse.cloud
-clickhouse_port=8443              # omit to auto-select based on transport + secure
-clickhouse_transport=http         # "http" or "native" — omit to auto-detect
-clickhouse_user=default
-clickhouse_password=your_password
-clickhouse_db=default             # omit for server-mode (scan all databases)
-
 # SMTP — used by DDHelper.send_report_email() when no credentials are passed explicitly
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587

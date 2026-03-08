@@ -51,12 +51,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# ── Individual connector extras (for minimal / selective installs) ────────────
-postgres          = ["psycopg2-binary>=2.9.9"]
-mysql             = ["PyMySQL>=1.1.0"]
-clickhouse        = ["clickhouse-connect>=0.7.0"]
-clickhouse-native = ["clickhouse-driver>=0.2.6"]   # native TCP transport
-spanner           = ["google-cloud-spanner>=3.40.0"]
+# Database connectors — install only what you need
+postgres    = ["psycopg2-binary>=2.9.9"]
+mysql       = ["PyMySQL>=1.1.0"]
+clickhouse  = ["clickhouse-connect>=0.7.0"]
+spanner     = ["google-cloud-spanner>=3.40.0"]
 
 # ── Reporting extras ──────────────────────────────────────────────────────────
 pdf               = ["reportlab>=4.0.0"]
@@ -67,7 +66,6 @@ all = [
     "psycopg2-binary>=2.9.9",
     "PyMySQL>=1.1.0",
     "clickhouse-connect>=0.7.0",
-    "clickhouse-driver>=0.2.6",
     "google-cloud-spanner>=3.40.0",
     "reportlab>=4.0.0",
     "secure-smtplib>=0.1.1",

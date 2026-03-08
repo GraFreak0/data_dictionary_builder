@@ -56,13 +56,11 @@ EMOJI     = "🔷 "
 EMAIL_TO  = "j_oyin@yahoo.com"
 
 # ── Shared / fallback connection values ─────────────────────────────────────
-_CH_HOST      = os.getenv("clickhouse_host", "localhost")
-_CH_PORT_RAW  = os.getenv("clickhouse_port")          # None → let connector pick
-_CH_PORT      = int(_CH_PORT_RAW) if _CH_PORT_RAW else None
-_CH_USER      = os.getenv("clickhouse_user", "default")
-_CH_PASSWORD  = os.getenv("clickhouse_password", "")
-_CH_DB        = os.getenv("clickhouse_db")             # None → server mode
-_CH_TRANSPORT = os.getenv("clickhouse_transport")      # "http" | "native" | None
+_CH_HOST     = os.getenv("clickhouse_host", "localhost")
+_CH_PORT     = int(os.getenv("clickhouse_port", 8123))
+_CH_USER     = os.getenv("clickhouse_user", "default")
+_CH_PASSWORD = os.getenv("clickhouse_password", "")
+_CH_DB       = os.getenv("clickhouse_db")          # None → server mode
 
 # ── Source connection ────────────────────────────────────────────────────────
 SOURCE_CONFIG = {

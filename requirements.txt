@@ -6,8 +6,7 @@ click>=8.0.0
 # Database connectors
 psycopg2-binary>=2.9.9  # PostgreSQL
 PyMySQL>=1.1.0  # MySQL
-clickhouse-connect>=0.7.0  # ClickHouse (HTTP/HTTPS transport)
-# clickhouse-driver>=0.2.6  # ClickHouse (native TCP transport — uncomment to use)
+clickhouse-connect>=0.7.0  # ClickHouse
 google-cloud-spanner>=3.40.0  # Google Cloud Spanner
 
 # Email functionality
