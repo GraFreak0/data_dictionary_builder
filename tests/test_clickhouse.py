@@ -53,7 +53,7 @@ load_dotenv()
 
 CONNECTOR = "clickhouse"
 EMOJI     = "🔷 "
-EMAIL_TO  = "j_oyin@yahoo.com"
+EMAIL_TO  = "you@mail.com"
 
 # ── Shared / fallback connection values ─────────────────────────────────────
 _CH_HOST     = os.getenv("clickhouse_host", "localhost")
