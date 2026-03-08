@@ -8,41 +8,78 @@ Output layout
     ./models/          ← YAML files (per-schema and combined)
     ./reports/         ← JSON comparison reports + compiled reports.pdf
 
-Configuration (.env or environment variables):
-    SPANNER_INSTANCE    e.g. my-instance
-    SPANNER_DATABASE    e.g. my-database
-    SPANNER_PROJECT     e.g. my-gcp-project  (optional if ADC is configured)
-    GOOGLE_APPLICATION_CREDENTIALS  path to service-account JSON key
+Configuration (.env or environment variables)
+---------------------------------------------
+    SPANNER_INSTANCE               e.g. my-instance
+    SPANNER_DATABASE               e.g. my-database
+    SPANNER_PROJECT                e.g. my-gcp-project  (optional if ADC is set)
+    GOOGLE_APPLICATION_CREDENTIALS path to service-account JSON key
 
-Spanner always returns a single "public" schema, so filter demos confirm
-every format works correctly against that one real schema name, plus a
-non-matching case to verify zero-match behaviour.
+Spanner always exposes a single schema named "public", so all filter
+strategies are demonstrated against that real schema name. A non-matching
+case verifies zero-match behaviour.
 
-Optional email (PDF attached automatically):
+Source-specific overrides (fall back to shared values above):
+    SOURCE_SPANNER_INSTANCE
+    SOURCE_SPANNER_DATABASE
+    SOURCE_SPANNER_PROJECT
+
+Destination-specific overrides:
+    DEST_SPANNER_INSTANCE
+    DEST_SPANNER_DATABASE
+    DEST_SPANNER_PROJECT
+
+Email (PDF attached automatically):
     SMTP_HOST  SMTP_PORT  SMTP_USER  SMTP_PASSWORD  EMAIL_TO
 """
 
+import json as _json_mod
 import os
 
 from dotenv import load_dotenv
 
-from data_dictionary_builder import MetadataExtractor, YAMLGenerator, SchemaComparator
-
-from data_dictionary_builder import DDHelper
+from data_dictionary_builder import (
+    DDHelper,
+    DatabaseMetadata,
+    ExecutionTimer,
+    MetadataExtractor,
+    SchemaComparator,
+    YAMLGenerator,
+)
 
 load_dotenv()
 
 CONNECTOR     = "spanner"
 EMOJI         = "☁️  "
-TARGET_SCHEMA = "public"
+EMAIL_TO      = os.getenv("EMAIL_TO", "")
+TARGET_SCHEMA = "public"        # Spanner always returns a single "public" schema
 
-BASE_CONFIG = {
-    "db_type":     CONNECTOR,
-    "instance_id": os.getenv("SPANNER_INSTANCE", ""),
-    "database_id": os.getenv("SPANNER_DATABASE", ""),
-}
-if os.getenv("SPANNER_PROJECT"):
-    BASE_CONFIG["project_id"] = os.getenv("SPANNER_PROJECT")
+# ── Shared / fallback connection values ──────────────────────────────────────
+_SP_INSTANCE = os.getenv("SPANNER_INSTANCE", "")
+_SP_DATABASE = os.getenv("SPANNER_DATABASE", "")
+_SP_PROJECT  = os.getenv("SPANNER_PROJECT",  "")
+
+def _build_config(instance, database, project) -> dict:
+    cfg = {"db_type": CONNECTOR, "instance_id": instance, "database_id": database}
+    if project:
+        cfg["project_id"] = project
+    return cfg
+
+# ── Source connection ─────────────────────────────────────────────────────────
+SOURCE_CONFIG = _build_config(
+    instance = os.getenv("SOURCE_SPANNER_INSTANCE") or _SP_INSTANCE,
+    database = os.getenv("SOURCE_SPANNER_DATABASE") or _SP_DATABASE,
+    project  = os.getenv("SOURCE_SPANNER_PROJECT")  or _SP_PROJECT,
+)
+
+# ── Destination connection ────────────────────────────────────────────────────
+DEST_CONFIG = _build_config(
+    instance = os.getenv("DEST_SPANNER_INSTANCE") or _SP_INSTANCE,
+    database = os.getenv("DEST_SPANNER_DATABASE") or _SP_DATABASE,
+    project  = os.getenv("DEST_SPANNER_PROJECT")  or _SP_PROJECT,
+)
+
+TARGET_SCHEMAS = [TARGET_SCHEMA]
 
 
 def section(title: str) -> None:
@@ -50,7 +87,7 @@ def section(title: str) -> None:
 
 
 def _configured() -> bool:
-    if not BASE_CONFIG["instance_id"] or not BASE_CONFIG["database_id"]:
+    if not _SP_INSTANCE or not _SP_DATABASE:
         print("  ⚠  SPANNER_INSTANCE / SPANNER_DATABASE not set – skipping")
         return False
     return True
@@ -63,21 +100,23 @@ def _configured() -> bool:
 def test_connection():
     section("1. Connection Test")
     if not _configured():
-        return False
-    ok = MetadataExtractor(**BASE_CONFIG).test_connection()
-    assert ok, "❌  Could not connect – check env vars / credentials"
-    print("  ✓ Connected")
-    return True
+        return
+    src_ok  = MetadataExtractor(**SOURCE_CONFIG).test_connection()
+    dest_ok = MetadataExtractor(**DEST_CONFIG).test_connection()
+    assert src_ok,  "❌  Could not connect to SOURCE – check env vars / ADC"
+    assert dest_ok, "❌  Could not connect to DEST   – check env vars / ADC"
+    print("  ✓ Source connected")
+    print("  ✓ Destination connected")
 
 
 def test_schema_listing():
     section("2. Schema Listing  (Spanner always returns ['public'])")
     if not _configured():
         return ["public"]
-    with MetadataExtractor(**BASE_CONFIG) as ext:
+    with MetadataExtractor(**DEST_CONFIG) as ext:
         schemas = ext.get_schemas_list()
     print(f"  Schemas: {schemas}")
-    assert schemas == ["public"], "Expected single 'public' schema"
+    assert schemas == ["public"], f"Expected ['public'], got {schemas}"
     print("  ✓ Schema listing OK")
     return schemas
 
@@ -85,62 +124,67 @@ def test_schema_listing():
 def test_table_listing():
     section("3. Table Listing")
     if not _configured():
-        return []
-    with MetadataExtractor(**BASE_CONFIG) as ext:
+        return
+    with MetadataExtractor(**DEST_CONFIG) as ext:
         tables = ext.get_tables_list(TARGET_SCHEMA)
     print(f"  Tables ({len(tables)}): {tables[:10]}")
+    if len(tables) > 10:
+        print(f"  … and {len(tables)-10} more")
     print(f"  ✓ Found {len(tables)} table(s)")
-    return tables
 
 
 def test_schema_filter_strategies():
-    section("4. Schema-Filter Strategies")
+    section("4. Schema-Filter Strategies  (destination DB)")
     if not _configured():
-        return
-    with MetadataExtractor(**BASE_CONFIG) as ext:
+        return [TARGET_SCHEMA]
+    with MetadataExtractor(**DEST_CONFIG) as ext:
         live = ext.get_schemas_list()
     print(f"  Live schemas: {live}\n")
     cases = [
-        ("4a. Exact name",             ["public"],            True),
-        ("4b. Glob  (pub%)",           ["pub%"],              True),
-        ("4c. prefix:",                ["prefix:pub"],        True),
-        ("4d. suffix:",                ["suffix:lic"],        True),
-        ("4e. contains:",              ["contains:pub"],      True),
-        ("4f. regex:",                 ["regex:^pub.*$"],     True),
-        ("4g. Mixed",                  ["public", "prefix:stg_", "regex:^analytics_\\d{4}$"], True),
-        ("4h. None  (all)",            None,                  True),
-        ("4i. Non-matching filter",    ["prefix:stg_"],       False),
+        ("4a. Exact name",          ["public"],                                        True),
+        ("4b. Glob  (pub%)",        ["pub%"],                                          True),
+        ("4c. prefix:",             ["prefix:pub"],                                    True),
+        ("4d. suffix:",             ["suffix:lic"],                                    True),
+        ("4e. contains:",           ["contains:pub"],                                  True),
+        ("4f. regex:",              ["regex:^pub.*$"],                                 True),
+        ("4g. Mixed",               ["public", "prefix:stg_", "regex:^analytics_\\d{4}$"], True),
+        ("4h. None  (all)",         None,                                              True),
+        ("4i. Non-matching filter", ["prefix:stg_"],                                   False),
     ]
     for label, sf, expect_public in cases:
-        with MetadataExtractor(**BASE_CONFIG) as ext:
+        with MetadataExtractor(**DEST_CONFIG) as ext:
             matched = [s.name for s in ext.extract_all_schemas(schema_filter=sf).schemas]
         ok = ("public" in matched) == expect_public
         print(f"  {'✓' if ok else '✗'} {label}  →  {matched}")
     print("  ✓ Filter strategies OK")
+    return live
 
 
 def test_extract_all_schemas():
-    section("5. Full Metadata Extraction")
+    section("5. Full Metadata Extraction  (destination → snapshot)")
     if not _configured():
         return None
-    with MetadataExtractor(**BASE_CONFIG) as ext:
-        db_meta = ext.extract_all_schemas(schema_filter=["public"])
-    print(f"  Instance: {db_meta.database_name}  |  Type: {db_meta.database_type}")
-    for schema in db_meta.schemas:
+    with MetadataExtractor(**DEST_CONFIG) as ext:
+        dest_db_meta = ext.extract_all_schemas(
+            schema_filter=TARGET_SCHEMAS,
+            parallel_workers=4,
+        )
+    print(f"  Instance: {dest_db_meta.database_name}  |  Type: {dest_db_meta.database_type}")
+    for schema in dest_db_meta.schemas:
         print(f"  [{schema.name}]  {len(schema.tables)} table(s)")
         for t in schema.tables[:5]:
             print(f"    • {t.name}  ({len(t.columns)} cols, {t.row_count} rows)")
         if len(schema.tables) > 5:
             print(f"    … and {len(schema.tables)-5} more")
     print("  ✓ Extraction OK")
-    return db_meta
+    return dest_db_meta
 
 
 def test_extract_single_schema():
     section("6. Extract Single Schema")
     if not _configured():
         return None
-    with MetadataExtractor(**BASE_CONFIG) as ext:
+    with MetadataExtractor(**DEST_CONFIG) as ext:
         schema = ext.extract_schema(TARGET_SCHEMA)
     print(f"  Schema: {schema.name}  ({len(schema.tables)} tables)")
     print("  ✓ OK")
@@ -151,7 +195,7 @@ def test_extract_single_table(schema):
     section("7. Extract Single Table  (PK detail)")
     if schema is None or not schema.tables:
         print("  ⚠  No schema / tables – skipping"); return
-    with MetadataExtractor(**BASE_CONFIG) as ext:
+    with MetadataExtractor(**DEST_CONFIG) as ext:
         table = ext.extract_table(TARGET_SCHEMA, schema.tables[0].name)
     print(f"  {table.schema_name}.{table.name}  ({table.row_count} rows)")
     print(f"  PKs: {table.primary_keys}")
@@ -161,65 +205,125 @@ def test_extract_single_table(schema):
     print("  ✓ OK")
 
 
-def test_yaml_per_schema(db_meta, dirs):
+def test_yaml_per_schema(dest_db_meta, dirs):
     section("8. YAML Generation – Per-Schema  →  ./models/")
-    if db_meta is None:
+    if dest_db_meta is None:
         print("  ⚠  No metadata – skipping"); return
-    files = YAMLGenerator(output_dir=str(dirs["models"])).generate_yaml_files(db_meta)
+    gen   = YAMLGenerator(output_dir=str(dirs["models"]))
+    files = gen.generate_yaml_files(dest_db_meta)
     for f in files:
         print(f"  • {os.path.basename(f)}  ({os.path.getsize(f):,} bytes)")
     print("  ✓ Per-schema YAML OK")
 
 
-def test_yaml_combined(db_meta, dirs):
+def test_yaml_combined(dest_db_meta, dirs):
     section("9. YAML Generation – Combined  →  ./models/all_models.yml")
-    if db_meta is None:
+    if dest_db_meta is None:
         print("  ⚠  No metadata – skipping"); return
     filepath = YAMLGenerator(output_dir=str(dirs["models"])).generate_single_yaml(
-        db_meta, filename="all_models.yml"
+        dest_db_meta, filename="all_models.yml"
     )
     print(f"  {os.path.basename(filepath)}  ({os.path.getsize(filepath):,} bytes)")
     print("  ✓ Combined YAML OK")
 
 
-def test_documentation_gaps(db_meta, dirs):
+def test_documentation_gaps(dest_db_meta, dirs):
     section("10. Documentation Gap Detection")
-    if db_meta is None:
+    if dest_db_meta is None:
         print("  ⚠  No metadata – skipping"); return
     gen            = YAMLGenerator(output_dir=str(dirs["models"]))
-    tables_no_desc = gen.get_tables_without_descriptions(db_meta)
-    cols_no_desc   = gen.get_columns_without_descriptions(db_meta)
-    total_t = sum(len(s.tables) for s in db_meta.schemas)
-    total_c = sum(len(t.columns) for s in db_meta.schemas for t in s.tables)
+    tables_no_desc = gen.get_tables_without_descriptions(dest_db_meta)
+    cols_no_desc   = gen.get_columns_without_descriptions(dest_db_meta)
+    total_t = sum(len(s.tables) for s in dest_db_meta.schemas)
+    total_c = sum(len(t.columns) for s in dest_db_meta.schemas for t in s.tables)
     print(f"  Tables  : {100*(total_t-len(tables_no_desc))//max(total_t,1)}%  ({len(tables_no_desc)}/{total_t} missing)")
     print(f"  Columns : {100*(total_c-len(cols_no_desc))//max(total_c,1)}%  ({len(cols_no_desc)}/{total_c} missing)")
     print("  ✓ Gap detection OK")
 
 
-def test_schema_comparison(dirs):
-    section("11. Schema Comparison  (self-comparison → 0 diffs)")
-    if not _configured():
-        return None
-    report = SchemaComparator(
-        source_config=BASE_CONFIG,
-        destination_config=BASE_CONFIG,
+def test_schema_comparison(helper, dirs, dest_db_meta):
+    section("11. Schema Comparison  (source fresh  vs  destination reingested)")
+    if not _configured() or dest_db_meta is None:
+        print("  ⚠  Not configured or no metadata – skipping"); return None, None
+
+    comparator = SchemaComparator(
+        source_config=SOURCE_CONFIG,
+        destination_config=DEST_CONFIG,
         yaml_output_dir=str(dirs["models"]),
-    ).compare_and_generate_report(
-        source_schema_name=TARGET_SCHEMA,
-        destination_schema_name=TARGET_SCHEMA,
-        include_yaml_gaps=True,
     )
-    s = report["summary"]
-    print(f"  Missing tables: {s['missing_tables_count']}  |  columns: {s['missing_columns_count']}  |  type mismatches: {s['type_mismatches_count']}")
-    path = helper.save_report(report)
-    print(f"  JSON → {path}")
+
+    all_missing_tables:  list = []
+    all_missing_columns: list = []
+    all_type_mismatches: list = []
+    all_tbl_gaps:        list = []
+    all_col_gaps:        list = []
+
+    for schema_name in TARGET_SCHEMAS:
+        dest_has = any(s.name == schema_name for s in dest_db_meta.schemas)
+        if not dest_has:
+            print(f"  ⚠  '{schema_name}' absent in destination snapshot – skipping")
+            continue
+        print(f"\n  Comparing schema: {schema_name}")
+        per_report = comparator.compare_and_generate_report(
+            source_schema_name=schema_name,
+            destination_schema_name=schema_name,
+            include_yaml_gaps=True,
+            dest_db_metadata=dest_db_meta,
+            source_db_metadata=dest_db_meta,
+        )
+        s = per_report["summary"]
+        print(
+            f"    missing tables: {s['missing_tables_count']}  |  "
+            f"missing columns: {s['missing_columns_count']}  |  "
+            f"type mismatches: {s['type_mismatches_count']}"
+        )
+        all_missing_tables.extend(per_report["comparison"].get("missing_tables",  []))
+        all_missing_columns.extend(per_report["comparison"].get("missing_columns", []))
+        all_type_mismatches.extend(per_report["comparison"].get("type_mismatches", []))
+        if "yaml_gaps" in per_report:
+            all_tbl_gaps.extend(per_report["yaml_gaps"].get("tables_without_descriptions",  []))
+            all_col_gaps.extend(per_report["yaml_gaps"].get("columns_without_descriptions", []))
+
+    combined_report = {
+        "source":      {k: v for k, v in SOURCE_CONFIG.items()},
+        "destination": {k: v for k, v in DEST_CONFIG.items()},
+        "schemas_compared": TARGET_SCHEMAS,
+        "summary": {
+            "schemas_compared":                   len(TARGET_SCHEMAS),
+            "missing_tables_count":               len(all_missing_tables),
+            "missing_columns_count":              len(all_missing_columns),
+            "type_mismatches_count":              len(all_type_mismatches),
+            "tables_without_descriptions_count":  len(all_tbl_gaps),
+            "columns_without_descriptions_count": len(all_col_gaps),
+        },
+        "comparison": {
+            "missing_tables":  all_missing_tables,
+            "missing_columns": all_missing_columns,
+            "type_mismatches": all_type_mismatches,
+        },
+        "yaml_gaps": {
+            "tables_without_descriptions":  all_tbl_gaps,
+            "columns_without_descriptions": all_col_gaps,
+        },
+    }
+    s = combined_report["summary"]
+    print(
+        f"\n  Combined — schemas: {s['schemas_compared']}  |  "
+        f"missing tables: {s['missing_tables_count']}  |  "
+        f"missing columns: {s['missing_columns_count']}  |  "
+        f"type mismatches: {s['type_mismatches_count']}"
+    )
+    json_path = helper.save_report(combined_report)
+    print(f"  JSON → {json_path}")
     print("  ✓ OK")
-    return report
+    return combined_report, json_path
 
 
-def test_compile_pdf(helper):
+def test_compile_pdf(helper, json_path):
     section("12. Compile Reports → PDF  →  ./reports/pdf/")
-    pdf_path = helper.compile_pdf()
+    if json_path is None:
+        print("  ⚠  No JSON report – skipping"); return None
+    pdf_path = helper.compile_pdf(source_json=json_path)
     if pdf_path:
         print(f"  PDF → {pdf_path}  ({os.path.getsize(pdf_path):,} bytes)")
         print("  ✓ PDF compilation OK")
@@ -228,24 +332,34 @@ def test_compile_pdf(helper):
     return pdf_path
 
 
-def test_email_report(report, pdf_path):
+def test_email_report(helper, report, pdf_path):
     section("13. Email Report + PDF Attachment  (optional)")
     if report is None:
         print("  ⚠  No report – skipping"); return
-    ok = helper.send_report_email(report=report, pdf_path=pdf_path,
-                             subject="[Spanner Test] Schema Comparison Report")
-    print("  ✓ Email sent" if ok else "  ⚠  SMTP not configured – skipped")
+    ok = helper.send_report_email(
+        report=report,
+        pdf_path=pdf_path,
+        subject="[Spanner Test] Schema Comparison Report",
+        email_to=EMAIL_TO,
+    )
+    print(f"  ✓ Email sent to {EMAIL_TO}" if ok else "  ⚠  SMTP not configured – skipped")
 
 
-def test_metadata_export(db_meta, dirs):
-    section("14. Metadata Export to JSON  →  ./reports/json/")
-    if db_meta is None:
+def test_metadata_export(helper, dest_db_meta):
+    section("14. Metadata Export + Serialization Round-Trip")
+    if dest_db_meta is None:
         print("  ⚠  No metadata – skipping"); return
-    _meta_path = helper.reports_json_dir / "spanner_metadata.json"
-    import json as _json_mod
-    _meta_path.write_text(_json_mod.dumps(db_meta.to_dict(), indent=2, default=str), encoding="utf-8")
-    path = _meta_path
-    print(f"  {path}  ({os.path.getsize(path):,} bytes)")
+    meta_path = helper.reports_json_dir / "spanner_metadata.json"
+    meta_path.write_text(
+        _json_mod.dumps(dest_db_meta.to_dict(), indent=2, default=str),
+        encoding="utf-8",
+    )
+    print(f"  Exported → {meta_path}  ({os.path.getsize(meta_path):,} bytes)")
+    restored    = DatabaseMetadata.from_dict(dest_db_meta.to_dict())
+    orig_tables = {t.name for s in dest_db_meta.schemas for t in s.tables}
+    rest_tables = {t.name for s in restored.schemas     for t in s.tables}
+    assert orig_tables == rest_tables, f"Round-trip mismatch: {orig_tables ^ rest_tables}"
+    print(f"  Round-trip OK — {len(orig_tables)} table(s) preserved")
     print("  ✓ Export OK")
 
 
@@ -258,26 +372,58 @@ if __name__ == "__main__":
 
     helper = DDHelper(".")
     dirs   = helper.dirs
-    print(f"\n  models/       → {dirs['models']}\n  reports/json/ → {dirs['reports_json']}\n  reports/pdf/  → {dirs['reports_pdf']}")
+    timer  = ExecutionTimer()
 
-    test_connection()
-    test_schema_listing()
-    test_table_listing()
-    test_schema_filter_strategies()
+    print(f"\n  models/       → {dirs['models']}")
+    print(f"  reports/json/ → {dirs['reports_json']}")
+    print(f"  reports/pdf/  → {dirs['reports_pdf']}")
+    print(f"\n  source instance : {SOURCE_CONFIG.get('instance_id', '—')}")
+    print(f"  dest   instance : {DEST_CONFIG.get('instance_id', '—')}")
 
-    db_meta = test_extract_all_schemas()
-    schema  = test_extract_single_schema()
+    with timer.task("1. Connection test"):
+        test_connection()
 
-    test_extract_single_table(schema)
-    test_yaml_per_schema(db_meta, dirs)
-    test_yaml_combined(db_meta, dirs)
-    test_documentation_gaps(db_meta, dirs)
+    with timer.task("2. Schema listing"):
+        test_schema_listing()
 
-    report   = test_schema_comparison(dirs)
-    pdf_path = test_compile_pdf(helper)
+    with timer.task("3. Table listing"):
+        test_table_listing()
 
-    test_email_report(report, pdf_path)
-    test_metadata_export(db_meta, dirs)
+    with timer.task("4. Schema filter strategies"):
+        TARGET_SCHEMAS = test_schema_filter_strategies()
+        print(f"\n  → TARGET_SCHEMAS set to: {TARGET_SCHEMAS}")
+
+    with timer.task("5. Full metadata extraction (destination snapshot)"):
+        dest_db_meta = test_extract_all_schemas()
+
+    with timer.task("6. Extract single schema"):
+        schema = test_extract_single_schema()
+
+    with timer.task("7. Extract single table"):
+        test_extract_single_table(schema)
+
+    with timer.task("8. YAML per-schema"):
+        test_yaml_per_schema(dest_db_meta, dirs)
+
+    with timer.task("9. YAML combined"):
+        test_yaml_combined(dest_db_meta, dirs)
+
+    with timer.task("10. Documentation gap detection"):
+        test_documentation_gaps(dest_db_meta, dirs)
+
+    with timer.task("11. Schema comparison (source fresh vs dest reingested)"):
+        report, json_path = test_schema_comparison(helper, dirs, dest_db_meta)
+
+    with timer.task("12. Compile PDF"):
+        pdf_path = test_compile_pdf(helper, json_path)
+
+    with timer.task("13. Email report"):
+        test_email_report(helper, report, pdf_path)
+
+    with timer.task("14. Metadata export + round-trip"):
+        test_metadata_export(helper, dest_db_meta)
+
+    timer.summary("Spanner Test Suite — Execution Summary")
 
     print("\n" + "✅ " * 30)
     print("  All Spanner feature tests completed!")
