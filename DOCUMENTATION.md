@@ -36,7 +36,10 @@ For a **minimal install**, use `--no-deps` then add only what you need:
 ```bash
 pip install psycopg2-binary          # PostgreSQL
 pip install PyMySQL                  # MySQL / MariaDB
-pip install clickhouse-connect        # ClickHouse
+pip install clickhouse-connect       # ClickHouse (HTTP transport)
+pip install clickhouse-driver        # ClickHouse (native TCP, optional)
+pip install oracledb                 # Oracle Database
+pip install pymssql                  # SQL Server / Azure SQL
 pip install google-cloud-spanner     # Google Cloud Spanner
 pip install reportlab                # PDF report generation
 ```
@@ -177,6 +180,52 @@ with MetadataExtractor(
 ```
 
 `transport` accepts `"http"`, `"native"`, or `None` (auto-detect). Auto-detect prefers HTTP when `clickhouse-connect` is installed. Install HTTP support with `ddgen install clickhouse`. Metadata is read from `system.columns` using a 2-query bulk approach.
+
+### Oracle Database
+
+Uses `oracledb` in **thin mode** — no Oracle Instant Client installation required.
+
+In Oracle, schemas are tied to users: the `database` parameter maps to the Oracle **service name** (e.g. `XEPDB1`, `ORCL`, `FREEPDB1`). Each Oracle user is a schema.
+
+```python
+with MetadataExtractor(
+    db_type="oracle",
+    host="my-oracle-host.example.com",
+    port=1521,                 # default
+    database="XEPDB1",         # Oracle service name
+    user="hr",
+    password="secret",
+) as ext:
+    db_meta = ext.extract_all_schemas(schema_filter=["HR", "OE"])
+```
+
+Requires `oracledb`. Install with `pip install data-dictionary-builder[oracle]` or `ddgen install oracle`.
+
+Table and column descriptions are read from `ALL_TAB_COMMENTS` / `ALL_COL_COMMENTS`. Row counts come from `ALL_TABLES.NUM_ROWS` (updated by `DBMS_STATS` / `ANALYZE`).
+
+### SQL Server / Azure SQL Database
+
+Uses `pymssql` for pure-Python connectivity — no ODBC driver required.
+
+```python
+with MetadataExtractor(
+    db_type="sqlserver",
+    host="my-sql-server.example.com",
+    port=1433,             # default
+    database="MyDatabase",
+    user="sa",
+    password="secret",
+) as ext:
+    db_meta = ext.extract_all_schemas(schema_filter=["dbo", "sales"])
+```
+
+For Azure SQL, pass the fully-qualified server name as `host` (e.g. `myserver.database.windows.net`). Use SQL authentication or a service principal.
+
+Requires `pymssql`. Install with `pip install data-dictionary-builder[sqlserver]` or `ddgen install sqlserver`.
+
+Table and column descriptions are read from `sys.extended_properties` (`MS_Description`). Row counts come from `sys.dm_db_partition_stats`.
+
+**Server mode** (omit `database`): lists all user databases on the server (excludes `master`, `tempdb`, `model`, `msdb`).
 
 ### Google Cloud Spanner
 
@@ -781,7 +830,7 @@ Key constructor parameters:
 
 | Parameter | Type | Description |
 |---|---|---|
-| `db_type` | `str` | `"sqlite"` \| `"postgres"` \| `"mysql"` \| `"clickhouse"` \| `"spanner"` |
+| `db_type` | `str` | `"sqlite"` \| `"postgres"` \| `"mysql"` \| `"clickhouse"` \| `"oracle"` \| `"sqlserver"` \| `"spanner"` |
 | `host` | `str` | Server hostname or IP |
 | `port` | `int` | Server port — auto-defaulted per db_type if omitted |
 | `database` | `str` | Database name — omit for server-mode scan |
@@ -891,6 +940,18 @@ For native TCP:
 ```bash
 pip install clickhouse-driver
 ```
+
+**Oracle — `ORA-12541: TNS:no listener` or connection refused**
+Check that `host`, `port` (default `1521`), and `database` (service name) are correct. Run `lsnrctl status` on the server to verify the listener is running. For Oracle XE, the default service name is `XEPDB1` (PDB) or `XE` (CDB).
+
+**Oracle — `ORA-01017: invalid username/password`**
+Oracle usernames are case-insensitive but passwords are case-sensitive by default in 11g+. Verify credentials with `sqlplus user/pass@host:port/service`.
+
+**SQL Server — `Login failed for user`**
+Ensure SQL Server authentication is enabled (not Windows-only). Check that the login exists and the password is correct. For Azure SQL, the login must be in the format `user@server` for some tiers.
+
+**SQL Server — `Cannot open database`**
+Verify the `database` name is correct and the login has `CONNECT` permission on that database. Omit `database` to connect in server mode and list available databases first.
 
 **Google Cloud Spanner — `google.auth.exceptions.DefaultCredentialsError`**
 Run `gcloud auth application-default login`, or set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json`.

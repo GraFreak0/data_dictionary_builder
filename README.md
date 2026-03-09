@@ -19,6 +19,8 @@ pip install "data-dictionary-builder[postgres]"
 pip install "data-dictionary-builder[mysql]"
 pip install "data-dictionary-builder[clickhouse]"
 pip install "data-dictionary-builder[spanner]"
+pip install "data-dictionary-builder[oracle]"
+pip install "data-dictionary-builder[sqlserver]"
 
 # Everything at once
 pip install "data-dictionary-builder[all]"
@@ -29,6 +31,8 @@ Or use the CLI to install connectors after the fact:
 ```bash
 ddgen install postgres
 ddgen install clickhouse
+ddgen install oracle
+ddgen install sqlserver
 ddgen install all
 ```
 
@@ -42,6 +46,8 @@ ddgen install all
 | **PostgreSQL** | `[postgres]` | `psycopg2-binary` |
 | **MySQL / MariaDB** | `[mysql]` | `PyMySQL` |
 | **ClickHouse** | `[clickhouse]` | `clickhouse-connect` (HTTP/HTTPS) · `clickhouse-driver` (native TCP, optional) |
+| **Oracle Database** | `[oracle]` | `oracledb` (thin mode — no Oracle Client needed) |
+| **SQL Server / Azure SQL** | `[sqlserver]` | `pymssql` |
 | **Google Cloud Spanner** | `[spanner]` | `google-cloud-spanner` |
 
 ---
