@@ -80,6 +80,24 @@ CONNECTORS = {
         "transport":   "HTTP / native TCP",
         "default_port": 8123,
     },
+    "oracle": {
+        "label":       "Oracle Database",
+        "import_mod":  "oracledb",
+        "pip_package": "oracledb",
+        "pip_extra":   "oracle",
+        "notes":       "thin mode — no Oracle Client needed; --database = service name",
+        "transport":   "TCP",
+        "default_port": 1521,
+    },
+    "sqlserver": {
+        "label":       "SQL Server / Azure SQL",
+        "import_mod":  "pymssql",
+        "pip_package": "pymssql",
+        "pip_extra":   "sqlserver",
+        "notes":       "pure-Python pymssql; also accepts --db-type mssql",
+        "transport":   "TCP",
+        "default_port": 1433,
+    },
     "spanner": {
         "label":       "Google Cloud Spanner",
         "import_mod":  "google.cloud.spanner",
@@ -109,7 +127,7 @@ def _db_options(prefix: str = ""):
         opts = [
             click.option(f"--{p}db-type",   f"--{p}type",  default="postgres",
                          show_default=True, metavar="TYPE",
-                         help="Database type: sqlite | postgres | mysql | clickhouse | spanner"),
+                         help="Database type: sqlite | postgres | mysql | clickhouse | oracle | sqlserver | spanner"),
             click.option(f"--{p}host",       default="localhost",   show_default=True,
                          metavar="HOST",    help="Database server hostname or IP."),
             click.option(f"--{p}port",       default=None,  type=int,
@@ -162,12 +180,16 @@ MAIN_HELP = (
     "    postgres    PostgreSQL / Amazon Aurora / AlloyDB\n"
     "    mysql       MySQL 5.7+ and MariaDB 10.3+\n"
     "    clickhouse  ClickHouse Cloud and self-hosted (HTTP + native TCP)\n"
+    "    oracle      Oracle Database (thin mode — no Instant Client needed)\n"
+    "    sqlserver   SQL Server / Azure SQL Database  (alias: mssql)\n"
     "    spanner     Google Cloud Spanner (Application Default Credentials)\n"
     "\n\b\n"
     "  Quick start\n"
     "  ───────────\n"
     "    ddgen install postgres\n"
-    "    ddgen extract --db-type postgres --host prod.db.io --database mydb\n"
+    "    ddgen extract --db-type postgres  --host prod.db.io --database mydb\n"
+    "    ddgen extract --db-type oracle    --host ora.prod.io --database XEPDB1\n"
+    "    ddgen extract --db-type sqlserver --host sql.prod.io --database MyDB\n"
     "    ddgen compare --source-host prod.db.io --dest-host staging.db.io\n"
     "    ddgen features             # full module and API reference\n"
     "    ddgen <command> --help     # options and examples for any command\n"
@@ -211,7 +233,7 @@ def features():
   ───────────
     MetadataExtractor(db_type, **connection_params)
 
-    db_type             str    "sqlite" | "postgres" | "mysql" | "clickhouse" | "spanner"
+    db_type             str    "sqlite" | "postgres" | "mysql" | "clickhouse" | "oracle" | "sqlserver" | "spanner"
     host                str    Server hostname or IP address
     port                int    Server port (auto-defaulted per db_type if omitted)
     database            str    Database name (omit for server-mode — scans all databases)
@@ -273,6 +295,8 @@ def features():
   ───────────
     Omit 'database' from connection params to scan every database on the server.
     Supported for MySQL, ClickHouse, and PostgreSQL.
+    Oracle: all non-system schemas (users) are enumerated automatically.
+    SQL Server: all non-system databases on the instance are enumerated.
 
     with MetadataExtractor(db_type="mysql", host="prod", user="ro", password="…") as ext:
         db_meta = ext.extract_all_schemas(schema_filter=["prefix:app_"])
@@ -611,9 +635,13 @@ def features():
     mysql          PyMySQL              3306           ddgen install mysql
     clickhouse     clickhouse-connect   8123 / 8443*   ddgen install clickhouse
                    clickhouse-driver    9000 / 9440*
+    oracle         oracledb             1521           ddgen install oracle
+    sqlserver      pymssql              1433           ddgen install sqlserver
     spanner        google-cloud-spanner —              ddgen install spanner
 
     * With secure=True the port auto-adjusts: HTTP → 8443, native TCP → 9440.
+    Oracle uses thin mode — no Oracle Instant Client installation required.
+    SQL Server also accepts --db-type mssql as an alias.
 
   ClickHouse transport selection
   ──────────────────────────────
@@ -730,7 +758,14 @@ def features():
   pip install data-dictionary-builder
   ddgen install postgres
   ddgen install clickhouse
+  ddgen install oracle
+  ddgen install sqlserver
   ddgen install all       ← installs all optional drivers
+
+  # Or install extras directly with pip
+  pip install "data-dictionary-builder[oracle]"
+  pip install "data-dictionary-builder[sqlserver]"
+  pip install "data-dictionary-builder[all]"
 
   # Editable install from source
   git clone https://github.com/GraFreak0/data_dictionary_builder
@@ -748,8 +783,10 @@ def features():
 
 @main.command("extract")
 @click.option("--db-type", "--type", "-t", default="postgres", show_default=True,
-              type=click.Choice(["sqlite", "postgres", "mysql", "clickhouse", "spanner"],
-                                case_sensitive=False),
+              type=click.Choice(
+                  ["sqlite", "postgres", "mysql", "clickhouse", "oracle", "sqlserver", "mssql", "spanner"],
+                  case_sensitive=False,
+              ),
               help="Database type to connect to.")
 @click.option("--host",         "-H", default="localhost",  show_default=True, metavar="HOST",
               help="Database server hostname or IP.")
@@ -760,6 +797,8 @@ def features():
 @click.option("--user",         "-u", default=None, metavar="USER", help="Login username.")
 @click.option("--password",     "-P", default=None, metavar="PASS", hide_input=False,
               help="Login password (or use SOURCE_PASSWORD env var).")
+@click.option("--service",      default=None, metavar="SERVICE",
+              help="Oracle only: service name (e.g. XEPDB1, ORCL). Alias for --database.")
 @click.option("--schema-filter","-s", default=None, multiple=True, metavar="FILTER",
               help=(
                   "Schema filter — repeat for multiple entries. "
@@ -786,7 +825,7 @@ def features():
               help="Spanner: Cloud Spanner instance ID.")
 @click.option("--report-dir",   default=None, metavar="DIR",
               help="Base directory for DDHelper (JSON report output). Defaults to output-dir parent.")
-def extract(db_type, host, port, database, user, password, schema_filter,
+def extract(db_type, host, port, database, user, password, service, schema_filter,
             parallel, output_dir, fmt, combined, transport, secure,
             project_id, instance_id, report_dir):
     """
@@ -797,11 +836,15 @@ def extract(db_type, host, port, database, user, password, schema_filter,
 
     \b
     Examples:
-      ddgen extract --db-type postgres --host prod.db.io --database mydb --user ro
-      ddgen extract --db-type sqlite   --database ./local.db
-      ddgen extract --db-type mysql    --host 127.0.0.1 --database app -s "prefix:stg_"
+      ddgen extract --db-type postgres   --host prod.db.io --database mydb --user ro
+      ddgen extract --db-type sqlite     --database ./local.db
+      ddgen extract --db-type mysql      --host 127.0.0.1 --database app -s "prefix:stg_"
       ddgen extract --db-type clickhouse --host my.cloud.clickhouse.com \\
                     --transport http --secure --schema-filter default
+      ddgen extract --db-type oracle     --host ora.prod.io --database XEPDB1 \\
+                    --user hr --schema-filter HR --schema-filter OE
+      ddgen extract --db-type sqlserver  --host sql.prod.io --database AdventureWorks \\
+                    --user sa --schema-filter dbo --schema-filter sales
       ddgen extract --db-type postgres --host prod.db.io --database mydb \\
                     --schema-filter public --schema-filter "prefix:stg_" \\
                     --parallel 16 --output-dir ./dbt/models --combined
@@ -812,7 +855,9 @@ def extract(db_type, host, port, database, user, password, schema_filter,
     cfg: dict = {"db_type": db_type.lower()}
     if host:        cfg["host"]     = host
     if port:        cfg["port"]     = port
-    if database:    cfg["database"] = database
+    # Oracle: --service is an alias for --database
+    effective_database = database or (service if db_type.lower() == "oracle" else None)
+    if effective_database: cfg["database"] = effective_database
     if user:        cfg["user"]     = user or os.getenv("SOURCE_USER")
     if password:    cfg["password"] = password or os.getenv("SOURCE_PASSWORD")
     if transport:   cfg["clickhouse_transport"] = transport
@@ -911,24 +956,32 @@ def extract(db_type, host, port, database, user, password, schema_filter,
 
 @main.command("compare")
 @click.option("--source-db-type",  default="postgres", show_default=True,
-              type=click.Choice(["sqlite","postgres","mysql","clickhouse","spanner"],
-                                case_sensitive=False),
+              type=click.Choice(
+                  ["sqlite","postgres","mysql","clickhouse","oracle","sqlserver","mssql","spanner"],
+                  case_sensitive=False,
+              ),
               help="Source database type.")
 @click.option("--source-host",     default="localhost", show_default=True, metavar="HOST")
 @click.option("--source-port",     default=None, type=int, metavar="PORT")
 @click.option("--source-database", "--source-db", default=None, metavar="DB")
+@click.option("--source-service",  default=None, metavar="SERVICE",
+              help="Oracle source: service name (alias for --source-database).")
 @click.option("--source-user",     default=None, metavar="USER")
 @click.option("--source-password", default=None, metavar="PASS")
 @click.option("--source-transport",default=None, type=click.Choice(["http","native"]),
               help="ClickHouse source transport.")
 @click.option("--source-secure",   is_flag=True, default=False)
 @click.option("--dest-db-type",    default="postgres", show_default=True,
-              type=click.Choice(["sqlite","postgres","mysql","clickhouse","spanner"],
-                                case_sensitive=False),
+              type=click.Choice(
+                  ["sqlite","postgres","mysql","clickhouse","oracle","sqlserver","mssql","spanner"],
+                  case_sensitive=False,
+              ),
               help="Destination database type.")
 @click.option("--dest-host",       default="localhost", show_default=True, metavar="HOST")
 @click.option("--dest-port",       default=None, type=int, metavar="PORT")
 @click.option("--dest-database",   "--dest-db", default=None, metavar="DB")
+@click.option("--dest-service",    default=None, metavar="SERVICE",
+              help="Oracle destination: service name (alias for --dest-database).")
 @click.option("--dest-user",       default=None, metavar="USER")
 @click.option("--dest-password",   default=None, metavar="PASS")
 @click.option("--dest-transport",  default=None, type=click.Choice(["http","native"]),
@@ -946,9 +999,9 @@ def extract(db_type, host, port, database, user, password, schema_filter,
               help="Send the report PDF to this address (requires SMTP_* env vars).")
 @click.option("--parallel",        "-w", default=8, show_default=True, metavar="N",
               help="Extraction threads for destination snapshot.")
-def compare(source_db_type, source_host, source_port, source_database,
+def compare(source_db_type, source_host, source_port, source_database, source_service,
             source_user, source_password, source_transport, source_secure,
-            dest_db_type, dest_host, dest_port, dest_database,
+            dest_db_type, dest_host, dest_port, dest_database, dest_service,
             dest_user, dest_password, dest_transport, dest_secure,
             schema, output_dir, report_dir, pdf, email_to, parallel):
     """
@@ -969,23 +1022,35 @@ def compare(source_db_type, source_host, source_port, source_database,
           --source-db-type clickhouse --source-host ch.cloud.io --source-secure \\
           --dest-db-type   postgres   --dest-host   pg.prod.io  \\
           --schema default --report-dir ./reports --pdf --email-to team@co.com
+
+      ddgen compare \\
+          --source-db-type oracle --source-host ora.prod.io --source-service ORCL \\
+          --dest-db-type   oracle --dest-host   ora.stage.io --dest-service  ORCL \\
+          --schema HR --schema OE
+
+      ddgen compare \\
+          --source-db-type sqlserver --source-host sql.prod.io --source-database MyDB \\
+          --dest-db-type   sqlserver --dest-host   sql.stage.io --dest-database MyDB \\
+          --schema dbo --schema sales --pdf
     """
     from . import MetadataExtractor, SchemaComparator, DDHelper, ExecutionTimer
 
-    def _cfg(db_type, host, port, database, user, password, transport, secure, prefix):
+    def _cfg(db_type, host, port, database, service, user, password, transport, secure, prefix):
         c = {"db_type": db_type.lower()}
         if host:        c["host"]     = host
         if port:        c["port"]     = port
-        if database:    c["database"] = database
+        # Oracle: --service is an alias for --database
+        effective_db = database or (service if db_type.lower() == "oracle" else None)
+        if effective_db: c["database"] = effective_db
         c["user"]     = user     or os.getenv(f"{prefix}_USER")
         c["password"] = password or os.getenv(f"{prefix}_PASSWORD")
         if transport:   c["clickhouse_transport"] = transport
         if secure:      c["secure"] = True
         return c
 
-    src_cfg  = _cfg(source_db_type, source_host, source_port, source_database,
+    src_cfg  = _cfg(source_db_type, source_host, source_port, source_database, source_service,
                     source_user, source_password, source_transport, source_secure, "SOURCE")
-    dest_cfg = _cfg(dest_db_type, dest_host, dest_port, dest_database,
+    dest_cfg = _cfg(dest_db_type, dest_host, dest_port, dest_database, dest_service,
                     dest_user, dest_password, dest_transport, dest_secure, "DEST")
 
     schema_names = list(schema) if schema else None
@@ -1171,12 +1236,14 @@ def install_connector(connector: str):
     Install the driver package for a database connector.
 
     \b
-    CONNECTOR is one of: postgres, mysql, clickhouse, spanner, all
+    CONNECTOR is one of: postgres, mysql, clickhouse, oracle, sqlserver, spanner, all
 
     \b
     Examples:
         ddgen install postgres
         ddgen install clickhouse
+        ddgen install oracle
+        ddgen install sqlserver
         ddgen install all
     """
     targets = INSTALLABLE if connector == "all" else [connector.lower()]
