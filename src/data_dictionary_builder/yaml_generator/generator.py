@@ -430,45 +430,99 @@ class YAMLGenerator:
         logger.info(f"Generated combined YAML file: {filepath}")
         return filepath
     
+    def _load_yaml_descriptions(self, schema_name: str) -> Dict[str, Any]:
+        """
+        Load descriptions from the existing YAML file for a schema.
+
+        Returns a dict structured as:
+            {
+                table_name: {
+                    "description": str | None,
+                    "columns": { column_name: str | None, ... }
+                },
+                ...
+            }
+        """
+        safe_name = schema_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+        filepath = os.path.join(self.output_dir, f"{safe_name}.yml")
+        existing = self._load_existing_yaml(filepath)
+        if not existing:
+            return {}
+
+        result: Dict[str, Any] = {}
+        for model in existing.get('models', []):
+            name = model.get('name')
+            if not name:
+                continue
+            result[name] = {
+                'description': model.get('description') or '',
+                'columns': {
+                    col['name']: col.get('description') or ''
+                    for col in model.get('columns', [])
+                    if col.get('name')
+                },
+            }
+        return result
+
     def get_tables_without_descriptions(self, db_metadata: DatabaseMetadata) -> List[str]:
         """
         Get list of tables that don't have descriptions.
-        
+
+        Descriptions are checked in the existing YAML files first (where
+        user-written descriptions live), falling back to the in-memory
+        metadata description field.
+
         Args:
             db_metadata: DatabaseMetadata object
-            
+
         Returns:
             List of table names without descriptions
         """
         tables_without_desc = []
-        
+
         for schema in db_metadata.schemas:
+            yaml_descs = self._load_yaml_descriptions(schema.name)
             for table in schema.tables:
-                if not table.description:
+                yaml_table = yaml_descs.get(table.name, {})
+                has_desc = bool(
+                    yaml_table.get('description')
+                    or table.description
+                )
+                if not has_desc:
                     tables_without_desc.append(f"{schema.name}.{table.name}")
-        
+
         return tables_without_desc
-    
+
     def get_columns_without_descriptions(self, db_metadata: DatabaseMetadata) -> List[Dict[str, str]]:
         """
         Get list of columns that don't have descriptions.
-        
+
+        Descriptions are checked in the existing YAML files first (where
+        user-written descriptions live), falling back to the in-memory
+        metadata description field.
+
         Args:
             db_metadata: DatabaseMetadata object
-            
+
         Returns:
             List of dictionaries with table and column information
         """
         columns_without_desc = []
-        
+
         for schema in db_metadata.schemas:
+            yaml_descs = self._load_yaml_descriptions(schema.name)
             for table in schema.tables:
+                yaml_cols = yaml_descs.get(table.name, {}).get('columns', {})
                 for column in table.columns:
-                    if not column.description:
+                    has_desc = bool(
+                        yaml_cols.get(column.name)
+                        or column.description
+                    )
+                    if not has_desc:
                         columns_without_desc.append({
                             'schema': schema.name,
                             'table': table.name,
-                            'column': column.name
+                            'column': column.name,
                         })
-        
+
         return columns_without_desc

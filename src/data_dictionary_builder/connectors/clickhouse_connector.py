@@ -1,20 +1,25 @@
 """
 ClickHouse database connector implementation.
 
-Uses the clickhouse-connect library (HTTP/HTTPS transport) instead of the
-native TCP protocol driver. Install with:
+Supports two transports, selected automatically or via the ``transport`` kwarg:
 
-    pip install data-dictionary-builder[clickhouse]
-    # or
-    ddgen install clickhouse
+* **HTTP** (default)  — ``clickhouse-connect`` library (port 8443 TLS / 8123 plain).
+* **Native TCP**       — ``clickhouse-driver`` library  (port 9440 TLS / 9000 plain).
+
+Install with:
+
+    pip install data-dictionary-builder[clickhouse]   # HTTP (default)
+    pip install clickhouse-driver                      # native TCP (optional)
 """
 
-import clickhouse_connect
+import importlib.util
 from typing import List, Optional, Dict, Any
 
 from .base import BaseConnector
 from ..metadata.models import SchemaMetadata, TableMetadata, ColumnMetadata
 
+
+# ── Transport availability helpers ────────────────────────────────────────────
 
 def _http_available() -> bool:
     return importlib.util.find_spec("clickhouse_connect") is not None
@@ -24,36 +29,76 @@ def _native_available() -> bool:
     return importlib.util.find_spec("clickhouse_driver") is not None
 
 
+# ── Native-transport adapter ──────────────────────────────────────────────────
+
+class _NativeResult:
+    """Makes clickhouse_driver rows look like a clickhouse_connect QueryResult."""
+
+    __slots__ = ("result_rows",)
+
+    def __init__(self, rows: list) -> None:
+        self.result_rows = rows
+
+
+class _NativeClient:
+    """
+    Thin wrapper around a ``clickhouse_driver.Client`` that exposes the same
+    ``.query()`` / ``.close()`` surface as a ``clickhouse_connect`` client.
+
+    Parameter binding: converts the ``{name:Type}`` placeholders used by
+    clickhouse-connect into the ``%(name)s`` style expected by clickhouse-driver.
+    """
+
+    def __init__(self, client) -> None:
+        self._client = client
+
+    def query(self, sql: str, parameters: Optional[Dict[str, Any]] = None) -> _NativeResult:
+        import re
+        if parameters:
+            sql = re.sub(r'\{(\w+):[^}]+\}', lambda m: f'%({m.group(1)})s', sql)
+        rows = self._client.execute(sql, parameters or {})
+        return _NativeResult(rows)
+
+    def close(self) -> None:
+        self._client.disconnect()
+
+
+# ── Connector ─────────────────────────────────────────────────────────────────
+
 class ClickHouseConnector(BaseConnector):
-    """Connector for ClickHouse databases (HTTP/HTTPS transport via clickhouse-connect)."""
+    """Connector for ClickHouse databases (HTTP or native TCP transport)."""
 
     def __init__(
         self,
         host: str,
-        port: int = 8123,
+        port: Optional[int] = None,
         database: str = "default",
         user: str = "default",
         password: str = "",
+        transport: Optional[str] = None,
         **kwargs,
     ):
         """
         Initialise the ClickHouse connector.
 
         Args:
-            host:     ClickHouse server hostname or IP.
-            port:     HTTP port — 8123 (plain) or 8443 (TLS). Default: 8123.
-            database: Database name. Omit (or pass None) for server-mode scanning.
-            user:     Username. Default: 'default'.
-            password: Password. Default: empty string.
-            **kwargs: Extra keyword arguments forwarded to
-                      ``clickhouse_connect.get_client()``, e.g.
-                      ``secure=True``, ``verify=False``.
+            host:      ClickHouse server hostname or IP.
+            port:      Override the default port.  When omitted the port is
+                       chosen based on transport and the ``secure`` kwarg:
+                       HTTP  → 8443 (TLS) / 8123 (plain)
+                       Native→ 9440 (TLS) / 9000 (plain)
+            database:  Database name.  Pass ``None`` for server-mode scanning.
+            user:      Username.  Default: ``'default'``.
+            password:  Password.  Default: empty string.
+            transport: ``'http'``, ``'native'``, or ``None`` (auto-detect).
+                       Auto-detect prefers HTTP when clickhouse-connect is
+                       installed, falling back to native TCP.
+            **kwargs:  Forwarded to the underlying driver, e.g.
+                       ``secure=True``, ``verify=False``.
         """
         self._transport = self._resolve_transport(transport)
 
-        # Apply transport-appropriate default port if none was given.
-        # HTTP: 8443 when secure=True (ClickHouse Cloud / TLS), else 8123.
-        # Native TCP: 9440 when secure=True, else 9000.
+        # Choose a sensible default port when none was supplied.
         if port is None:
             if self._transport == "http":
                 port = 8443 if kwargs.get("secure") else 8123
@@ -82,26 +127,61 @@ class ClickHouseConnector(BaseConnector):
             if k not in ("host", "port", "database", "user", "password")
         }
 
+    # ── Transport resolution ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _resolve_transport(transport: Optional[str]) -> str:
+        """Return the transport to use: ``'http'`` or ``'native'``."""
+        if transport in ("http", "native"):
+            return transport
+        if transport is not None:
+            raise ValueError(
+                f"Unknown transport {transport!r}. Use 'http', 'native', or None (auto)."
+            )
+        # Auto-detect: prefer HTTP (clickhouse-connect is the primary driver)
+        if _http_available():
+            return "http"
+        if _native_available():
+            return "native"
+        raise ImportError(
+            "No ClickHouse driver found. Install one of:\n"
+            "  pip install clickhouse-connect   # HTTP/HTTPS transport (recommended)\n"
+            "  pip install clickhouse-driver    # native TCP transport"
+        )
+
     # ── Connection lifecycle ──────────────────────────────────────────────────
 
     def connect(self) -> None:
-        """Open an HTTP(S) connection to the ClickHouse server."""
+        """Open a connection to the ClickHouse server."""
         try:
-            self.connection = clickhouse_connect.get_client(
-                host=self.host,
-                port=self.port,
-                database=self.connect_database,
-                username=self.user,       # clickhouse-connect uses 'username'
-                password=self.password,
-                **self._extra_kwargs,
-            )
-            # Smoke test
-            self.connection.query("SELECT 1")
+            if self._transport == "http":
+                import clickhouse_connect
+                self.connection = clickhouse_connect.get_client(
+                    host=self.host,
+                    port=self.port,
+                    database=self.connect_database,
+                    username=self.user,       # clickhouse-connect uses 'username'
+                    password=self.password,
+                    **self._extra_kwargs,
+                )
+                self.connection.query("SELECT 1")
+            else:
+                from clickhouse_driver import Client
+                client = Client(
+                    host=self.host,
+                    port=self.port,
+                    database=self.connect_database,
+                    user=self.user,
+                    password=self.password,
+                    **self._extra_kwargs,
+                )
+                client.execute("SELECT 1")
+                self.connection = _NativeClient(client)
         except Exception as e:
             raise ConnectionError(f"Failed to connect to ClickHouse: {e}")
 
     def disconnect(self) -> None:
-        """Close the HTTP client."""
+        """Close the connection."""
         if self.connection:
             self.connection.close()
             self.connection = None
@@ -206,7 +286,7 @@ class ClickHouseConnector(BaseConnector):
         """
         Bulk-optimised schema extraction for ClickHouse.
 
-        Issues exactly **2 HTTP queries** regardless of table count:
+        Issues exactly **2 queries** regardless of table count:
           1. ``system.tables``  — engine, comment, row count, primary key
           2. ``system.columns`` — all columns for all tables at once
 
@@ -286,7 +366,7 @@ class ClickHouseConnector(BaseConnector):
 
             schema_metadata.add_table(table_meta)
 
-    # ── Utility ───────────────────────────────────────────────────────────────
+        return schema_metadata
 
     # ── Utility ───────────────────────────────────────────────────────────────
 
