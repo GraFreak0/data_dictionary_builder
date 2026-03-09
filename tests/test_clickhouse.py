@@ -33,7 +33,7 @@ Destination-specific overrides (fall back to shared values above):
 
 Email (PDF attached automatically):
     SMTP_HOST  SMTP_PORT  SMTP_USER  SMTP_PASSWORD
-    Reports are always sent to j_oyin@yahoo.com
+    Reports are always sent to enauk address!
 """
 
 import json as _json_mod
