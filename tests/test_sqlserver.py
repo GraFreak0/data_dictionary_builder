@@ -1,39 +1,47 @@
 """
-test_clickhouse.py
-==================
-Exercises every major feature of data_dictionary_builder against ClickHouse.
+test_sqlserver.py
+=================
+Exercises every major feature of data_dictionary_builder against SQL Server
+(and Azure SQL Database).
 
 Output layout
 -------------
     ./models/          ← YAML files (per-schema and combined)
-    ./reports/         ← JSON comparison reports + compiled reports.pdf
+    ./reports/         ← JSON comparison reports + compiled PDF
 
 Configuration (.env or environment variables)
 ---------------------------------------------
 Shared / fallback:
-    clickhouse_host      default: localhost
-    clickhouse_port      default: 8123
-    clickhouse_user
-    clickhouse_password
-    clickhouse_db        optional – omit to scan all databases on the server
+    MSSQL_HOST         default: localhost
+    MSSQL_PORT         default: 1433
+    MSSQL_DB           database name
+    MSSQL_USER
+    MSSQL_PASSWORD
+    MSSQL_SCHEMAS      comma-separated schemas to target (default: dbo)
 
 Source-specific overrides (fall back to shared values above):
-    SOURCE_CLICKHOUSE_HOST
-    SOURCE_CLICKHOUSE_PORT
-    SOURCE_CLICKHOUSE_USER
-    SOURCE_CLICKHOUSE_PASSWORD
-    SOURCE_CLICKHOUSE_DB
+    SOURCE_MSSQL_HOST
+    SOURCE_MSSQL_PORT
+    SOURCE_MSSQL_DB
+    SOURCE_MSSQL_USER
+    SOURCE_MSSQL_PASSWORD
+    SOURCE_MSSQL_SCHEMAS
 
-Destination-specific overrides (fall back to shared values above):
-    DEST_CLICKHOUSE_HOST
-    DEST_CLICKHOUSE_PORT
-    DEST_CLICKHOUSE_USER
-    DEST_CLICKHOUSE_PASSWORD
-    DEST_CLICKHOUSE_DB
+Destination-specific overrides:
+    DEST_MSSQL_HOST
+    DEST_MSSQL_PORT
+    DEST_MSSQL_DB
+    DEST_MSSQL_USER
+    DEST_MSSQL_PASSWORD
+    DEST_MSSQL_SCHEMAS
 
 Email (PDF attached automatically):
-    SMTP_HOST  SMTP_PORT  SMTP_USER  SMTP_PASSWORD
-    Reports are always sent to enauk address!
+    SMTP_HOST  SMTP_PORT  SMTP_USER  SMTP_PASSWORD  EMAIL_TO
+
+Install the driver before running:
+    pip install pymssql
+    # or
+    pip install data-dictionary-builder[sqlserver]
 """
 
 import json as _json_mod
@@ -43,6 +51,7 @@ from dotenv import load_dotenv
 
 from data_dictionary_builder import (
     DDHelper,
+    DatabaseMetadata,
     ExecutionTimer,
     MetadataExtractor,
     SchemaComparator,
@@ -51,58 +60,45 @@ from data_dictionary_builder import (
 
 load_dotenv()
 
-CONNECTOR = "clickhouse"
-EMOJI = "🔷 "
-EMAIL_TO = os.getenv("EMAIL_TO", "")
+CONNECTOR = "sqlserver"
+EMOJI     = "🟦 "
+EMAIL_TO  = os.getenv("EMAIL_TO", "")
 
-# ── Shared / fallback connection values ─────────────────────────────────────
-_CH_HOST      = os.getenv("clickhouse_host", "localhost")
-_CH_PORT      = int(os.getenv("clickhouse_port", 8123))
-_CH_USER      = os.getenv("clickhouse_user", "default")
-_CH_PASSWORD  = os.getenv("clickhouse_password", "")
-_CH_DB        = os.getenv("clickhouse_db")           # None → server mode
-_CH_TRANSPORT = os.getenv("clickhouse_transport")    # "http" | "native" | None (auto)
+# ── Shared / fallback connection values ──────────────────────────────────────
+_MS_HOST     = os.getenv("MSSQL_HOST",    "localhost")
+_MS_PORT     = int(os.getenv("MSSQL_PORT", 1433))
+_MS_DB       = os.getenv("MSSQL_DB",      "")
+_MS_USER     = os.getenv("MSSQL_USER",    "sa")
+_MS_PASSWORD = os.getenv("MSSQL_PASSWORD", "")
+_MS_SCHEMAS  = os.getenv("MSSQL_SCHEMAS", "dbo")
 
-# ── Source connection ────────────────────────────────────────────────────────
+# ── Source connection ─────────────────────────────────────────────────────────
 SOURCE_CONFIG = {
-    "db_type": CONNECTOR,
-    "host": os.getenv("SOURCE_CLICKHOUSE_HOST") or _CH_HOST,
-    "user": os.getenv("SOURCE_CLICKHOUSE_USER") or _CH_USER,
-    "password": os.getenv("SOURCE_CLICKHOUSE_PASSWORD") or _CH_PASSWORD,
-    "secure": True,
-    "verify": False,
+    "db_type":  CONNECTOR,
+    "host":     os.getenv("SOURCE_MSSQL_HOST")     or _MS_HOST,
+    "port":     int(os.getenv("SOURCE_MSSQL_PORT") or _MS_PORT),
+    "user":     os.getenv("SOURCE_MSSQL_USER")     or _MS_USER,
+    "password": os.getenv("SOURCE_MSSQL_PASSWORD") or _MS_PASSWORD,
 }
-_src_port = os.getenv("SOURCE_CLICKHOUSE_PORT") or _CH_PORT
-if _src_port:
-    SOURCE_CONFIG["port"] = int(_src_port)
-_src_transport = os.getenv("SOURCE_CLICKHOUSE_TRANSPORT") or _CH_TRANSPORT
-if _src_transport:
-    SOURCE_CONFIG["transport"] = _src_transport
-_src_db = os.getenv("SOURCE_CLICKHOUSE_DB") or _CH_DB
+_src_db = os.getenv("SOURCE_MSSQL_DB") or _MS_DB
 if _src_db:
     SOURCE_CONFIG["database"] = _src_db
 
-# ── Destination connection ───────────────────────────────────────────────────
+# ── Destination connection ────────────────────────────────────────────────────
 DEST_CONFIG = {
-    "db_type": CONNECTOR,
-    "host": os.getenv("DEST_CLICKHOUSE_HOST") or _CH_HOST,
-    "user": os.getenv("DEST_CLICKHOUSE_USER") or _CH_USER,
-    "password": os.getenv("DEST_CLICKHOUSE_PASSWORD") or _CH_PASSWORD,
-    "secure": True,
-    "verify": False,
+    "db_type":  CONNECTOR,
+    "host":     os.getenv("DEST_MSSQL_HOST")     or _MS_HOST,
+    "port":     int(os.getenv("DEST_MSSQL_PORT") or _MS_PORT),
+    "user":     os.getenv("DEST_MSSQL_USER")     or _MS_USER,
+    "password": os.getenv("DEST_MSSQL_PASSWORD") or _MS_PASSWORD,
 }
-_dst_port = os.getenv("DEST_CLICKHOUSE_PORT") or _CH_PORT
-if _dst_port:
-    DEST_CONFIG["port"] = int(_dst_port)
-_dst_transport = os.getenv("DEST_CLICKHOUSE_TRANSPORT") or _CH_TRANSPORT
-if _dst_transport:
-    DEST_CONFIG["transport"] = _dst_transport
-_dst_db = os.getenv("DEST_CLICKHOUSE_DB") or _CH_DB
+_dst_db = os.getenv("DEST_MSSQL_DB") or _MS_DB
 if _dst_db:
     DEST_CONFIG["database"] = _dst_db
 
-# TARGET_SCHEMAS is set dynamically at runtime — see __main__
-TARGET_SCHEMAS: list = []
+# TARGET_SCHEMAS: set from env or resolved dynamically at runtime
+_schema_env = os.getenv("SOURCE_MSSQL_SCHEMAS") or _MS_SCHEMAS
+TARGET_SCHEMAS: list = [s.strip() for s in _schema_env.split(",") if s.strip()]
 
 
 def section(title: str) -> None:
@@ -124,7 +120,7 @@ def test_connection():
 
 
 def test_schema_listing():
-    section("2. Schema / Database Listing")
+    section("2. Schema Listing")
     with MetadataExtractor(**DEST_CONFIG) as ext:
         schemas = ext.get_schemas_list()
     print(f"  Destination schemas: {schemas}")
@@ -133,47 +129,55 @@ def test_schema_listing():
     return schemas
 
 
+def test_table_listing():
+    section("3. Table Listing")
+    if not TARGET_SCHEMAS:
+        print("  ⚠  TARGET_SCHEMAS empty – skipping"); return
+    with MetadataExtractor(**DEST_CONFIG) as ext:
+        tables = ext.get_tables_list(TARGET_SCHEMAS[0])
+    print(f"  Tables in '{TARGET_SCHEMAS[0]}': {tables[:10]}")
+    if len(tables) > 10:
+        print(f"  … and {len(tables)-10} more")
+    print(f"  ✓ Found {len(tables)} table(s)")
+
+
 def test_schema_filter_strategies():
-    """
-    Step 3 — applies every filter strategy against the live destination schema
-    list and returns the full unfiltered list for use as TARGET_SCHEMAS.
-    """
-    section("3. Schema-Filter Strategies  (destination DB)")
+    section("4. Schema-Filter Strategies  (destination DB)")
     with MetadataExtractor(**DEST_CONFIG) as ext:
         live = ext.get_schemas_list()
     print(f"  Live schemas: {live}\n")
-    cases = [
-        # ("3a. Exact names",            ["default", "system"]),
-        # ("3b. Glob  (default%)",       ["default%"]),
-        # ("3c. prefix:",                ["prefix:def"]),
-        # ("3d. suffix:",                ["suffix:ault"]),
-        # ("3e. contains:",              ["contains:sys"]),
-        # ("3f. regex:",                 ["regex:^def.*$"]),
-        # ("3g. Mixed",                  ["system", "prefix:def", "regex:^tmp_\\d+$"]),
-        ("3h. None  (all)",            None),
-    ]
+    cases: list = [("4a. None  (all)", None)]
+    if live:
+        _s = live[0]
+        cases = [
+            ("4a. Exact name",  [_s]),
+            ("4b. Glob",        [f"{_s[:3]}%"]),
+            ("4c. prefix:",     [f"prefix:{_s[:3]}"]),
+            ("4d. suffix:",     [f"suffix:{_s[-3:]}"]),
+            ("4e. contains:",   [f"contains:{_s[:3]}"]),
+            ("4f. None  (all)", None),
+        ]
     for label, sf in cases:
         with MetadataExtractor(**DEST_CONFIG) as ext:
             matched = [s.name for s in ext.extract_all_schemas(schema_filter=sf).schemas]
-        print(f"  ✓ {label}\n      filter: {sf}  →  {matched}\n")
+        print(f"  ✓ {label}  →  {matched}")
     print("  ✓ Filter strategies OK")
-    # Return the complete unfiltered schema list → becomes TARGET_SCHEMAS
     return live
 
 
 def test_extract_all_schemas():
-    """
-    Step 4 — extracts full metadata from the DESTINATION using TARGET_SCHEMAS.
-    Returns dest_db_meta, which later steps reuse instead of re-querying the DB.
-    """
-    section("4. Full Metadata Extraction  (destination DB → reused as snapshot)")
+    section("5. Full Metadata Extraction  (destination → snapshot)")
     with MetadataExtractor(**DEST_CONFIG) as ext:
-        dest_db_meta = ext.extract_all_schemas(schema_filter=TARGET_SCHEMAS)
+        dest_db_meta = ext.extract_all_schemas(
+            schema_filter=TARGET_SCHEMAS or None,
+            parallel_workers=4,
+        )
     print(f"  Database : {dest_db_meta.database_name}  |  Version: {dest_db_meta.version}")
     for schema in dest_db_meta.schemas:
         print(f"  [{schema.name}]  {len(schema.tables)} table(s)")
         for t in schema.tables[:5]:
-            print(f"    • {t.name}  ({len(t.columns)} cols, {t.row_count} rows)")
+            pk = f"  PK: {t.primary_keys}" if t.primary_keys else ""
+            print(f"    • {t.name}  ({len(t.columns)} cols, {t.row_count} rows){pk}")
         if len(schema.tables) > 5:
             print(f"    … and {len(schema.tables)-5} more")
     print("  ✓ Extraction OK")
@@ -181,7 +185,9 @@ def test_extract_all_schemas():
 
 
 def test_extract_single_schema():
-    section("5. Extract Single Schema")
+    section("6. Extract Single Schema")
+    if not TARGET_SCHEMAS:
+        print("  ⚠  TARGET_SCHEMAS empty – skipping"); return None
     with MetadataExtractor(**DEST_CONFIG) as ext:
         schema = ext.extract_schema(TARGET_SCHEMAS[0])
     print(f"  Schema: {schema.name}  ({len(schema.tables)} tables)")
@@ -190,21 +196,26 @@ def test_extract_single_schema():
 
 
 def test_extract_single_table(schema):
-    section("6. Extract Single Table")
-    if not schema.tables:
+    section("7. Extract Single Table  (PK / FK detail)")
+    if not schema or not schema.tables:
         print("  ⚠  No tables – skipping"); return
     with MetadataExtractor(**DEST_CONFIG) as ext:
         table = ext.extract_table(TARGET_SCHEMAS[0], schema.tables[0].name)
     print(f"  {table.schema_name}.{table.name}  ({table.row_count} rows)")
-    print(f"  PKs: {table.primary_keys}  |  Columns: {len(table.columns)}")
-    for col in table.columns[:8]:
-        pk = " [PK]" if col.is_primary_key else ""
-        print(f"    • {col.name}: {col.data_type}{'  NULL' if col.is_nullable else '  NOT NULL'}{pk}")
+    print(f"  PKs: {table.primary_keys}")
+    fk_cols = [c for c in table.columns if c.is_foreign_key]
+    if fk_cols:
+        for fk in fk_cols:
+            print(f"    FK: {fk.name} → {fk.foreign_key_table}.{fk.foreign_key_column}")
+    for col in table.columns[:10]:
+        pk   = " [PK]" if col.is_primary_key  else ""
+        desc = f'  "{col.description}"' if col.description else ""
+        print(f"    • {col.name}: {col.data_type}{'  NULL' if col.is_nullable else '  NOT NULL'}{pk}{desc}")
     print("  ✓ OK")
 
 
 def test_yaml_per_schema(dest_db_meta, dirs):
-    section("7. YAML Generation – Per-Schema  →  ./models/")
+    section("8. YAML Generation – Per-Schema  →  ./models/")
     gen   = YAMLGenerator(output_dir=str(dirs["models"]))
     files = gen.generate_yaml_files(dest_db_meta)
     for f in files:
@@ -213,7 +224,7 @@ def test_yaml_per_schema(dest_db_meta, dirs):
 
 
 def test_yaml_combined(dest_db_meta, dirs):
-    section("8. YAML Generation – Combined  →  ./models/all_models.yml")
+    section("9. YAML Generation – Combined  →  ./models/all_models.yml")
     filepath = YAMLGenerator(output_dir=str(dirs["models"])).generate_single_yaml(
         dest_db_meta, filename="all_models.yml"
     )
@@ -222,7 +233,7 @@ def test_yaml_combined(dest_db_meta, dirs):
 
 
 def test_documentation_gaps(dest_db_meta, dirs):
-    section("9. Documentation Gap Detection")
+    section("10. Documentation Gap Detection")
     gen            = YAMLGenerator(output_dir=str(dirs["models"]))
     tables_no_desc = gen.get_tables_without_descriptions(dest_db_meta)
     cols_no_desc   = gen.get_columns_without_descriptions(dest_db_meta)
@@ -230,48 +241,40 @@ def test_documentation_gaps(dest_db_meta, dirs):
     total_c = sum(len(t.columns) for s in dest_db_meta.schemas for t in s.tables)
     print(f"  Tables  : {100*(total_t-len(tables_no_desc))//max(total_t,1)}%  ({len(tables_no_desc)}/{total_t} missing)")
     print(f"  Columns : {100*(total_c-len(cols_no_desc))//max(total_c,1)}%  ({len(cols_no_desc)}/{total_c} missing)")
+    if tables_no_desc:
+        for t in tables_no_desc[:5]:
+            print(f"    undocumented table: {t}")
     print("  ✓ Gap detection OK")
 
 
 def test_schema_comparison(helper, dirs, dest_db_meta):
-    """
-    Step 10 — compares every schema in TARGET_SCHEMAS.
+    section("11. Schema Comparison  (source fresh  vs  destination reingested)")
+    schemas_to_compare = [s.name for s in dest_db_meta.schemas]
+    if TARGET_SCHEMAS:
+        schemas_to_compare = [s for s in schemas_to_compare if s in TARGET_SCHEMAS]
 
-    Source : fresh extraction from SOURCE_CONFIG each time.
-    Destination : reingested from dest_db_meta (extracted in step 4) —
-                  the destination DB is NOT queried again.
-    """
-    section("10. Schema Comparison  (source fresh  vs  destination reingested)")
-    if not TARGET_SCHEMAS:
-        print("  ⚠  TARGET_SCHEMAS is empty – skipping"); return None
+    if not schemas_to_compare:
+        print("  ⚠  No schemas to compare – skipping"); return None, None
 
     comparator = SchemaComparator(
         source_config=SOURCE_CONFIG,
-        destination_config=DEST_CONFIG,   # kept for reference; dest DB not queried
+        destination_config=DEST_CONFIG,
         yaml_output_dir=str(dirs["models"]),
     )
 
-    # Accumulate results across all schemas
     all_missing_tables:  list = []
     all_missing_columns: list = []
     all_type_mismatches: list = []
     all_tbl_gaps:        list = []
     all_col_gaps:        list = []
 
-    for schema_name in TARGET_SCHEMAS:
-        dest_has_schema = any(s.name == schema_name for s in dest_db_meta.schemas)
-        if not dest_has_schema:
-            print(f"  ⚠  Schema '{schema_name}' absent in destination snapshot – skipping")
-            continue
-
+    for schema_name in schemas_to_compare:
         print(f"\n  Comparing schema: {schema_name}")
         per_report = comparator.compare_and_generate_report(
             source_schema_name=schema_name,
             destination_schema_name=schema_name,
             include_yaml_gaps=True,
-            # Reuse already-extracted dest_db_meta — no destination DB round-trip
             dest_db_metadata=dest_db_meta,
-            # Reuse dest_db_meta for YAML gap analysis too — dest == source here
             source_db_metadata=dest_db_meta,
         )
         s = per_report["summary"]
@@ -287,13 +290,12 @@ def test_schema_comparison(helper, dirs, dest_db_meta):
             all_tbl_gaps.extend(per_report["yaml_gaps"].get("tables_without_descriptions",  []))
             all_col_gaps.extend(per_report["yaml_gaps"].get("columns_without_descriptions", []))
 
-    # Build combined report
     combined_report = {
         "source":      {k: v for k, v in SOURCE_CONFIG.items() if k != "password"},
         "destination": {k: v for k, v in DEST_CONFIG.items()   if k != "password"},
-        "schemas_compared": TARGET_SCHEMAS,
+        "schemas_compared": schemas_to_compare,
         "summary": {
-            "schemas_compared":                   len(TARGET_SCHEMAS),
+            "schemas_compared":                   len(schemas_to_compare),
             "missing_tables_count":               len(all_missing_tables),
             "missing_columns_count":              len(all_missing_columns),
             "type_mismatches_count":              len(all_type_mismatches),
@@ -310,7 +312,6 @@ def test_schema_comparison(helper, dirs, dest_db_meta):
             "columns_without_descriptions": all_col_gaps,
         },
     }
-
     s = combined_report["summary"]
     print(
         f"\n  Combined — schemas: {s['schemas_compared']}  |  "
@@ -325,7 +326,7 @@ def test_schema_comparison(helper, dirs, dest_db_meta):
 
 
 def test_compile_pdf(helper, json_path):
-    section("11. Compile Reports → PDF  →  ./reports/pdf/")
+    section("12. Compile Reports → PDF  →  ./reports/pdf/")
     pdf_path = helper.compile_pdf(source_json=json_path)
     if pdf_path:
         print(f"  PDF → {pdf_path}  ({os.path.getsize(pdf_path):,} bytes)")
@@ -336,30 +337,31 @@ def test_compile_pdf(helper, json_path):
 
 
 def test_email_report(helper, report, pdf_path):
-    section("12. Email Report + PDF Attachment")
+    section("13. Email Report + PDF Attachment  (optional)")
     if report is None:
         print("  ⚠  No report – skipping"); return
     ok = helper.send_report_email(
         report=report,
         pdf_path=pdf_path,
-        subject="[ClickHouse Test] Schema Comparison Report",
-        smtp_host=os.getenv("SMTP_HOST"),
-        smtp_port=int(os.getenv("SMTP_PORT", 587)),
-        smtp_user=os.getenv("SMTP_USER"),
-        smtp_password=os.getenv("SMTP_PASSWORD"),
+        subject="[SQL Server Test] Schema Comparison Report",
         email_to=EMAIL_TO,
     )
-    print(f"  ✓ Email sent to {EMAIL_TO}" if ok else "  ⚠  Email delivery failed – check SMTP env vars")
+    print(f"  ✓ Email sent to {EMAIL_TO}" if ok else "  ⚠  SMTP not configured – skipped")
 
 
 def test_metadata_export(helper, dest_db_meta):
-    section("13. Metadata Export to JSON  →  ./reports/json/")
-    _meta_path = helper.reports_json_dir / "clickhouse_metadata.json"
-    _meta_path.write_text(
+    section("14. Metadata Export + Serialisation Round-Trip")
+    meta_path = helper.reports_json_dir / "sqlserver_metadata.json"
+    meta_path.write_text(
         _json_mod.dumps(dest_db_meta.to_dict(), indent=2, default=str),
         encoding="utf-8",
     )
-    print(f"  {_meta_path}  ({os.path.getsize(_meta_path):,} bytes)")
+    print(f"  Exported → {meta_path}  ({os.path.getsize(meta_path):,} bytes)")
+    restored    = DatabaseMetadata.from_dict(dest_db_meta.to_dict())
+    orig_tables = {t.name for s in dest_db_meta.schemas for t in s.tables}
+    rest_tables = {t.name for s in restored.schemas     for t in s.tables}
+    assert orig_tables == rest_tables, f"Round-trip mismatch: {orig_tables ^ rest_tables}"
+    print(f"  Round-trip OK — {len(orig_tables)} table(s) preserved")
     print("  ✓ Export OK")
 
 
@@ -368,7 +370,7 @@ def test_metadata_export(helper, dest_db_meta):
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print(f"\n{EMOJI*30}\n  data_dictionary_builder — ClickHouse full feature test\n{EMOJI*30}")
+    print(f"\n{EMOJI*30}\n  data_dictionary_builder — SQL Server full feature test\n{EMOJI*30}")
 
     helper = DDHelper(".")
     dirs   = helper.dirs
@@ -377,8 +379,10 @@ if __name__ == "__main__":
     print(f"\n  models/       → {dirs['models']}")
     print(f"  reports/json/ → {dirs['reports_json']}")
     print(f"  reports/pdf/  → {dirs['reports_pdf']}")
-    print(f"\n  source host : {SOURCE_CONFIG['host']}")
-    print(f"  dest   host : {DEST_CONFIG['host']}")
+    db_label = SOURCE_CONFIG.get("database", "(server mode)")
+    print(f"\n  source : {SOURCE_CONFIG['host']}:{SOURCE_CONFIG['port']}/{db_label}")
+    db_label = DEST_CONFIG.get("database", "(server mode)")
+    print(f"  dest   : {DEST_CONFIG['host']}:{DEST_CONFIG['port']}/{db_label}")
 
     with timer.task("1. Connection test"):
         test_connection()
@@ -386,44 +390,45 @@ if __name__ == "__main__":
     with timer.task("2. Schema listing"):
         test_schema_listing()
 
-    with timer.task("3. Schema filter strategies"):
-        # TARGET_SCHEMAS is set here from the live destination schema list
+    with timer.task("3. Table listing"):
+        test_table_listing()
+
+    with timer.task("4. Schema filter strategies"):
         TARGET_SCHEMAS = test_schema_filter_strategies()
         print(f"\n  → TARGET_SCHEMAS set to: {TARGET_SCHEMAS}")
 
-    with timer.task("4. Full metadata extraction (destination snapshot)"):
+    with timer.task("5. Full metadata extraction (destination snapshot)"):
         dest_db_meta = test_extract_all_schemas()
 
-    with timer.task("5. Extract single schema"):
+    with timer.task("6. Extract single schema"):
         schema = test_extract_single_schema()
 
-    with timer.task("6. Extract single table"):
+    with timer.task("7. Extract single table"):
         test_extract_single_table(schema)
 
-    with timer.task("7. YAML per-schema"):
+    with timer.task("8. YAML per-schema"):
         test_yaml_per_schema(dest_db_meta, dirs)
 
-    with timer.task("8. YAML combined"):
+    with timer.task("9. YAML combined"):
         test_yaml_combined(dest_db_meta, dirs)
 
-    with timer.task("9. Documentation gap detection"):
+    with timer.task("10. Documentation gap detection"):
         test_documentation_gaps(dest_db_meta, dirs)
 
-    with timer.task("10. Schema comparison (source fresh vs dest reingested)"):
+    with timer.task("11. Schema comparison (source fresh vs dest reingested)"):
         report, json_path = test_schema_comparison(helper, dirs, dest_db_meta)
 
-    with timer.task("11. Compile PDF"):
+    with timer.task("12. Compile PDF"):
         pdf_path = test_compile_pdf(helper, json_path)
 
-    with timer.task("12. Email report"):
+    with timer.task("13. Email report"):
         test_email_report(helper, report, pdf_path)
 
-    with timer.task("13. Metadata export"):
+    with timer.task("14. Metadata export + round-trip"):
         test_metadata_export(helper, dest_db_meta)
 
-    timer.summary("ClickHouse Test Suite — Execution Summary")
+    timer.summary("SQL Server Test Suite — Execution Summary")
 
     print("\n" + "✅ " * 30)
-    print("  All ClickHouse feature tests passed!")
+    print("  All SQL Server feature tests passed!")
     print("✅ " * 30 + "\n")
-

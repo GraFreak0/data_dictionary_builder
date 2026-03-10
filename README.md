@@ -19,6 +19,8 @@ pip install "data-dictionary-builder[postgres]"
 pip install "data-dictionary-builder[mysql]"
 pip install "data-dictionary-builder[clickhouse]"
 pip install "data-dictionary-builder[spanner]"
+pip install "data-dictionary-builder[oracle]"
+pip install "data-dictionary-builder[sqlserver]"
 
 # Everything at once
 pip install "data-dictionary-builder[all]"
@@ -29,6 +31,8 @@ Or use the CLI to install connectors after the fact:
 ```bash
 ddgen install postgres
 ddgen install clickhouse
+ddgen install oracle
+ddgen install sqlserver
 ddgen install all
 ```
 
@@ -41,7 +45,9 @@ ddgen install all
 | **SQLite** | *(built-in)* | `sqlite3` (stdlib) |
 | **PostgreSQL** | `[postgres]` | `psycopg2-binary` |
 | **MySQL / MariaDB** | `[mysql]` | `PyMySQL` |
-| **ClickHouse** | `[clickhouse]` | `clickhouse-connect` (HTTP/HTTPS) |
+| **ClickHouse** | `[clickhouse]` | `clickhouse-connect` (HTTP/HTTPS) · `clickhouse-driver` (native TCP, optional) |
+| **Oracle Database** | `[oracle]` | `oracledb` (thin mode — no Oracle Client needed) |
+| **SQL Server / Azure SQL** | `[sqlserver]` | `pymssql` |
 | **Google Cloud Spanner** | `[spanner]` | `google-cloud-spanner` |
 
 ---
@@ -75,6 +81,12 @@ timer.summary()
 ## CLI
 
 ```bash
+# Show all commands and supported databases
+ddgen --help
+
+# Full module and API reference
+ddgen features
+
 # Check which connectors are installed
 ddgen connectors
 
@@ -82,6 +94,12 @@ ddgen connectors
 ddgen install postgres
 ddgen install clickhouse
 ddgen install all
+
+# Extract metadata and generate YAML in one step
+ddgen extract --db-type postgres --host prod.db.io --database mydb --user readonly
+
+# Compare two environments
+ddgen compare --source-host prod.db.io --dest-host staging.db.io --source-database mydb
 
 # Show library version and connector summary
 ddgen info
@@ -133,13 +151,16 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 ## Key Features
 
 - **Parallel extraction** — `ThreadPoolExecutor` with configurable workers; ClickHouse uses 2 queries and PostgreSQL uses 5 queries per schema regardless of table count
+- **Dual ClickHouse transport** — HTTP/HTTPS via `clickhouse-connect` (default) or native TCP via `clickhouse-driver`; auto-detected, with dynamic port defaults based on transport and TLS
 - **Schema filtering** — exact, glob, prefix, suffix, contains, regex — mix freely
 - **Smart YAML merge** — re-running never overwrites descriptions you've written by hand
+- **YAML-aware gap detection** — documentation coverage checks read from your existing YAML files, so descriptions you've added are always recognised
 - **Cross-database comparison** — compare any two database types; type aliases normalised before diffing
 - **PDF reports** — paginated, no row limits, table of contents (requires `reportlab`)
 - **Email delivery** — SMTP with env-var credential fallback; PDF attached automatically
 - **ExecutionTimer** — named task timing with a formatted summary table
 - **Server mode** — omit `database` to scan all databases on a MySQL, ClickHouse, or PostgreSQL server
+- **Rich CLI** — `ddgen extract`, `ddgen compare`, `ddgen features` (full API reference), `ddgen connectors`, `ddgen install`
 
 ---
 

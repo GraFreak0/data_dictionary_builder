@@ -13,8 +13,9 @@
 9. [Reports: JSON, PDF, and Email](#9-reports-json-pdf-and-email)
 10. [Timing Your Pipeline](#10-timing-your-pipeline)
 11. [Airflow Integration](#11-airflow-integration)
-12. [API Reference](#12-api-reference)
-13. [Troubleshooting](#13-troubleshooting)
+12. [CLI Reference](#12-cli-reference)
+13. [API Reference](#13-api-reference)
+14. [Troubleshooting](#14-troubleshooting)
 
 ---
 
@@ -35,7 +36,10 @@ For a **minimal install**, use `--no-deps` then add only what you need:
 ```bash
 pip install psycopg2-binary          # PostgreSQL
 pip install PyMySQL                  # MySQL / MariaDB
-pip install clickhouse-connect        # ClickHouse
+pip install clickhouse-connect       # ClickHouse (HTTP transport)
+pip install clickhouse-driver        # ClickHouse (native TCP, optional)
+pip install oracledb                 # Oracle Database
+pip install pymssql                  # SQL Server / Azure SQL
 pip install google-cloud-spanner     # Google Cloud Spanner
 pip install reportlab                # PDF report generation
 ```
@@ -144,23 +148,84 @@ Two transports are supported. Pass `transport` explicitly or omit it to auto-det
 | HTTP (`clickhouse-connect`) | **8443** | 8123 |
 | Native TCP (`clickhouse-driver`) | **9440** | 9000 |
 
-**HTTP / HTTPS — `clickhouse-connect` (recommended for cloud)**
+**HTTP / HTTPS — `clickhouse-connect` (recommended, default)**
 
 ```python
 with MetadataExtractor(
     db_type="clickhouse",
     host="my-cluster.clickhouse.cloud",
-    port=8443,          # HTTPS — use 8123 for plain HTTP
+    # port omitted — defaults to 8443 when secure=True
     database="default",
     user="default",
     password="secret",
-    transport="native",     # requires clickhouse-driver
     secure=True,
 ) as ext:
     ...
 ```
 
-Requires `clickhouse-connect` (HTTP/HTTPS transport). Install with `ddgen install clickhouse`. Metadata is read from `system.columns`.
+**Native TCP — `clickhouse-driver` (optional)**
+
+```python
+with MetadataExtractor(
+    db_type="clickhouse",
+    host="self-hosted.internal",
+    # port omitted — defaults to 9440 when secure=True
+    database="default",
+    user="default",
+    password="secret",
+    transport="native",     # requires: pip install clickhouse-driver
+    secure=True,
+) as ext:
+    ...
+```
+
+`transport` accepts `"http"`, `"native"`, or `None` (auto-detect). Auto-detect prefers HTTP when `clickhouse-connect` is installed. Install HTTP support with `ddgen install clickhouse`. Metadata is read from `system.columns` using a 2-query bulk approach.
+
+### Oracle Database
+
+Uses `oracledb` in **thin mode** — no Oracle Instant Client installation required.
+
+In Oracle, schemas are tied to users: the `database` parameter maps to the Oracle **service name** (e.g. `XEPDB1`, `ORCL`, `FREEPDB1`). Each Oracle user is a schema.
+
+```python
+with MetadataExtractor(
+    db_type="oracle",
+    host="my-oracle-host.example.com",
+    port=1521,                 # default
+    database="XEPDB1",         # Oracle service name
+    user="hr",
+    password="secret",
+) as ext:
+    db_meta = ext.extract_all_schemas(schema_filter=["HR", "OE"])
+```
+
+Requires `oracledb`. Install with `pip install data-dictionary-builder[oracle]` or `ddgen install oracle`.
+
+Table and column descriptions are read from `ALL_TAB_COMMENTS` / `ALL_COL_COMMENTS`. Row counts come from `ALL_TABLES.NUM_ROWS` (updated by `DBMS_STATS` / `ANALYZE`).
+
+### SQL Server / Azure SQL Database
+
+Uses `pymssql` for pure-Python connectivity — no ODBC driver required.
+
+```python
+with MetadataExtractor(
+    db_type="sqlserver",
+    host="my-sql-server.example.com",
+    port=1433,             # default
+    database="MyDatabase",
+    user="sa",
+    password="secret",
+) as ext:
+    db_meta = ext.extract_all_schemas(schema_filter=["dbo", "sales"])
+```
+
+For Azure SQL, pass the fully-qualified server name as `host` (e.g. `myserver.database.windows.net`). Use SQL authentication or a service principal.
+
+Requires `pymssql`. Install with `pip install data-dictionary-builder[sqlserver]` or `ddgen install sqlserver`.
+
+Table and column descriptions are read from `sys.extended_properties` (`MS_Description`). Row counts come from `sys.dm_db_partition_stats`.
+
+**Server mode** (omit `database`): lists all user databases on the server (excludes `master`, `tempdb`, `model`, `msdb`).
 
 ### Google Cloud Spanner
 
@@ -364,6 +429,8 @@ total_cols = sum(len(t.columns) for s in db_meta.schemas for t in s.tables)
 coverage   = 100 * (total_cols - len(columns_missing)) // max(total_cols, 1)
 print(f"Column documentation coverage: {coverage}%")
 ```
+
+**How gap detection works with YAML files:** The gap detection methods check your existing `{schema}.yml` files first (where hand-written descriptions live), then fall back to the in-memory metadata description field. This means descriptions you've written in YAML are always recognised as documented — the report will never incorrectly flag them as missing. The `YAMLGenerator` must be initialised with the same `output_dir` where your YAML files are stored.
 
 ---
 
@@ -673,9 +740,105 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 
 ---
 
-## 12. API Reference
+## 12. CLI Reference
+
+The CLI entry points are `ddgen` and `data-dictionary-builder`.
+
+```bash
+ddgen --help              # command overview
+ddgen features            # full module and API reference (in-terminal)
+ddgen <command> --help    # options and examples for any command
+```
+
+### `ddgen install <connector>`
+
+Install a database driver.
+
+```bash
+ddgen install postgres
+ddgen install mysql
+ddgen install clickhouse      # installs clickhouse-connect (HTTP transport)
+ddgen install spanner
+ddgen install all
+```
+
+### `ddgen connectors`
+
+List all supported connectors and whether each driver is currently installed.
+
+### `ddgen info`
+
+Show the library version, Python version, and connector status.
+
+### `ddgen extract`
+
+Extract metadata and generate YAML files in one command.
+
+```bash
+ddgen extract \
+  --db-type postgres \
+  --host prod.db.io \
+  --database mydb \
+  --user readonly \
+  --output-dir ./models \
+  --schema-filter "public" "prefix:stg_"
+```
+
+Key flags:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--db-type` | `postgres` | Database type |
+| `--host` | `localhost` | Server hostname |
+| `--port` | *(auto)* | Server port |
+| `--database` | — | Database name (omit for server mode) |
+| `--user` / `--password` | — | Credentials |
+| `--transport` | *(auto)* | ClickHouse only: `http` or `native` |
+| `--secure` | `false` | ClickHouse only: enable TLS |
+| `--output-dir` | `./models` | Where to write YAML files |
+| `--schema-filter` | *(all)* | One or more filter strings (space-separated) |
+| `--workers` | `5` | Parallel extraction threads |
+
+### `ddgen compare`
+
+Compare two environments and save a JSON + PDF report.
+
+```bash
+ddgen compare \
+  --source-host prod.db.io   --source-database mydb \
+  --dest-host staging.db.io  --dest-database mydb \
+  --source-db-type postgres  --dest-db-type postgres \
+  --schema public \
+  --output-dir ./reports
+```
+
+### `ddgen features`
+
+Prints a full in-terminal reference covering all classes, methods, parameters, and code examples — no browser needed.
+
+```bash
+ddgen features
+```
+
+---
+
+## 13. API Reference
 
 ### `MetadataExtractor(db_type, **connection_params)`
+
+Key constructor parameters:
+
+| Parameter | Type | Description |
+|---|---|---|
+| `db_type` | `str` | `"sqlite"` \| `"postgres"` \| `"mysql"` \| `"clickhouse"` \| `"oracle"` \| `"sqlserver"` \| `"spanner"` |
+| `host` | `str` | Server hostname or IP |
+| `port` | `int` | Server port — auto-defaulted per db_type if omitted |
+| `database` | `str` | Database name — omit for server-mode scan |
+| `user` / `password` | `str` | Credentials |
+| `transport` | `str` | ClickHouse only: `"http"` \| `"native"` \| `None` (auto) |
+| `secure` | `bool` | ClickHouse only: enable TLS (auto-adjusts port to 8443/9440) |
+| `project_id` | `str` | Spanner only: GCP project ID |
+| `instance_id` | `str` | Spanner only: Cloud Spanner instance ID |
 
 | Method | Returns | Description |
 |---|---|---|
@@ -695,8 +858,8 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 | `generate_yaml_files(db_meta)` | `List[str]` | One YAML per schema; smart merge |
 | `generate_single_yaml(db_meta, filename)` | `str` | One combined file |
 | `generate_schema_yaml(schema, filename)` | `str` | YAML for one schema |
-| `get_tables_without_descriptions(db_meta)` | `List[str]` | Undocumented table names |
-| `get_columns_without_descriptions(db_meta)` | `List[dict]` | Undocumented columns |
+| `get_tables_without_descriptions(db_meta)` | `List[str]` | Tables missing a description — checks existing YAML files first, then in-memory metadata |
+| `get_columns_without_descriptions(db_meta)` | `List[dict]` | Columns missing a description — checks existing YAML files first, then in-memory metadata |
 
 ---
 
@@ -755,12 +918,40 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 
 ---
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 ### Connection Problems
 
 **ClickHouse — `Connection refused` or timeout**
-Use the **HTTP port** — `8123` (plain) or `8443` (TLS/HTTPS). The native TCP port `9440`/`9000` is not used by `clickhouse-connect`. For cloud instances pass `secure=True` (defaults to port `8443`) and `verify=False` for self-signed certificates.
+The port depends on transport:
+- HTTP (`clickhouse-connect`): `8123` plain, `8443` TLS. Pass `secure=True` to auto-select `8443`.
+- Native TCP (`clickhouse-driver`): `9000` plain, `9440` TLS. Pass `secure=True` to auto-select `9440`.
+
+If you omit `port` entirely, the connector picks the right default based on your `transport` and `secure` values. For ClickHouse Cloud, always use `secure=True` and the HTTP transport (default). Pass `verify=False` for self-signed certificates.
+
+**ClickHouse — `No ClickHouse driver found`**
+At least one driver must be installed. Install the HTTP driver (recommended):
+```bash
+pip install clickhouse-connect
+# or
+ddgen install clickhouse
+```
+For native TCP:
+```bash
+pip install clickhouse-driver
+```
+
+**Oracle — `ORA-12541: TNS:no listener` or connection refused**
+Check that `host`, `port` (default `1521`), and `database` (service name) are correct. Run `lsnrctl status` on the server to verify the listener is running. For Oracle XE, the default service name is `XEPDB1` (PDB) or `XE` (CDB).
+
+**Oracle — `ORA-01017: invalid username/password`**
+Oracle usernames are case-insensitive but passwords are case-sensitive by default in 11g+. Verify credentials with `sqlplus user/pass@host:port/service`.
+
+**SQL Server — `Login failed for user`**
+Ensure SQL Server authentication is enabled (not Windows-only). Check that the login exists and the password is correct. For Azure SQL, the login must be in the format `user@server` for some tiers.
+
+**SQL Server — `Cannot open database`**
+Verify the `database` name is correct and the login has `CONNECT` permission on that database. Omit `database` to connect in server mode and list available databases first.
 
 **Google Cloud Spanner — `google.auth.exceptions.DefaultCredentialsError`**
 Run `gcloud auth application-default login`, or set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json`.
@@ -783,6 +974,9 @@ The database user needs `SELECT` privileges on `information_schema` and all targ
 
 **My descriptions were overwritten.**
 They should not be — `generate_yaml_files()` always merges with existing files. Check that you are writing to the same `output_dir` you read from. If you generate to `./models/` but the existing file is somewhere else, a new blank file is created instead of merging.
+
+**The report still shows my tables/columns as undocumented, even though I added descriptions to the YAML.**
+The gap detection methods (`get_tables_without_descriptions` / `get_columns_without_descriptions`) read descriptions from the existing YAML files on disk — make sure the `YAMLGenerator` is initialised with the same `output_dir` where your YAML files live. Descriptions that exist only in the YAML (not in the database as COMMENTs) are recognised correctly as long as the paths match.
 
 **YAML validation errors after generation.**
 Run `yamllint ./models/*.yml`. Descriptions containing YAML special characters (`:`, `#`, `{`) are handled automatically — if you see errors, they likely come from manual edits.

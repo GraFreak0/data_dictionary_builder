@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data-dictionary-builder"
-version = "1.0.3"
+version = "0.1.1"
 description = "Extract database metadata, generate dbt-compatible YAML, compare schemas, and deliver reports — all in a single Python import."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -56,17 +56,21 @@ postgres    = ["psycopg2-binary>=2.9.9"]
 mysql       = ["PyMySQL>=1.1.0"]
 clickhouse  = ["clickhouse-connect>=0.7.0"]
 spanner     = ["google-cloud-spanner>=3.40.0"]
+oracle      = ["oracledb>=2.0.0"]
+sqlserver   = ["pymssql>=2.2.0"]
 
 # ── Reporting extras ──────────────────────────────────────────────────────────
 pdf               = ["reportlab>=4.0.0"]
 email             = ["secure-smtplib>=0.1.1"]
 
-# ── Install everything including the native TCP ClickHouse driver ─────────────
+# ── Install everything ────────────────────────────────────────────────────────
 all = [
     "psycopg2-binary>=2.9.9",
     "PyMySQL>=1.1.0",
     "clickhouse-connect>=0.7.0",
     "google-cloud-spanner>=3.40.0",
+    "oracledb>=2.0.0",
+    "pymssql>=2.2.0",
     "reportlab>=4.0.0",
     "secure-smtplib>=0.1.1",
     "numpy",
@@ -86,7 +90,8 @@ Repository  = "https://github.com/GraFreak0/data_dictionary_builder"
 Issues      = "https://github.com/GraFreak0/data_dictionary_builder/issues"
 
 [project.scripts]
-ddgen = "data_dictionary_builder.cli:main"
+ddgen                  = "data_dictionary_builder.cli:main"
+data-dictionary-builder = "data_dictionary_builder.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

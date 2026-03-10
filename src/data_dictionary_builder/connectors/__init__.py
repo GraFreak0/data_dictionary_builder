@@ -14,6 +14,8 @@ __all__ = [
     "ClickHouseConnector",
     "SpannerConnector",
     "SQLiteConnector",
+    "OracleConnector",
+    "SQLServerConnector",
     "get_connector",
 ]
 
@@ -24,6 +26,8 @@ _CONNECTOR_MAP = {
     "ClickHouseConnector":  ("clickhouse_connector",  "clickhouse-driver",      "clickhouse"),
     "SpannerConnector":     ("spanner_connector",     "google-cloud-spanner",   "spanner"),
     "SQLiteConnector":      ("sqlite_connector",      None,                     None),
+    "OracleConnector":      ("oracle_connector",      "oracledb",               "oracle"),
+    "SQLServerConnector":   ("sqlserver_connector",   "pymssql",                "sqlserver"),
 }
 
 
@@ -70,19 +74,22 @@ def get_connector(db_type: str, **kwargs) -> BaseConnector:
     db_type_lower = db_type.lower()
 
     _routes = {
-        "sqlite":      ("SQLiteConnector",      None,                 None),
-        "postgres":    ("PostgresConnector",    "psycopg2-binary",    "postgres"),
-        "postgresql":  ("PostgresConnector",    "psycopg2-binary",    "postgres"),
-        "mysql":       ("MySQLConnector",       "PyMySQL",            "mysql"),
-        "mariadb":     ("MySQLConnector",       "PyMySQL",            "mysql"),
-        "clickhouse":  ("ClickHouseConnector",  "clickhouse-driver",  "clickhouse"),
+        "sqlite":      ("SQLiteConnector",      None,                   None),
+        "postgres":    ("PostgresConnector",    "psycopg2-binary",      "postgres"),
+        "postgresql":  ("PostgresConnector",    "psycopg2-binary",      "postgres"),
+        "mysql":       ("MySQLConnector",       "PyMySQL",              "mysql"),
+        "mariadb":     ("MySQLConnector",       "PyMySQL",              "mysql"),
+        "clickhouse":  ("ClickHouseConnector",  "clickhouse-driver",    "clickhouse"),
         "spanner":     ("SpannerConnector",     "google-cloud-spanner", "spanner"),
+        "oracle":      ("OracleConnector",      "oracledb",             "oracle"),
+        "sqlserver":   ("SQLServerConnector",   "pymssql",              "sqlserver"),
+        "mssql":       ("SQLServerConnector",   "pymssql",              "sqlserver"),
     }
 
     if db_type_lower not in _routes:
         raise ValueError(
             f"Unsupported database type: '{db_type}'. "
-            f"Supported types: {', '.join(sorted(set(k for k in _routes if k != 'postgresql' and k != 'mariadb')))}"
+            f"Supported types: {', '.join(sorted(set(k for k in _routes if k not in ('postgresql', 'mariadb', 'mssql'))))}"
         )
 
     class_name, pip_package, pip_extra = _routes[db_type_lower]
