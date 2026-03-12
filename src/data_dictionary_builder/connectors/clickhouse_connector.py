@@ -8,8 +8,17 @@ Supports two transports, selected automatically or via the ``transport`` kwarg:
 
 Install with:
 
-    pip install data-dictionary-builder[clickhouse]   # HTTP (default)
-    pip install clickhouse-driver                      # native TCP (optional)
+    pip install data-dictionary-builder[clickhouse]          # HTTP (default)
+    pip install data-dictionary-builder[clickhouse-native]   # native TCP
+    pip install clickhouse-driver                            # native TCP (direct)
+
+Transport selection
+-------------------
+* ``transport=None`` (default) — auto-detect.  Tries HTTP first; if the
+  connection fails **and** the native driver is installed, automatically
+  retries on the native TCP port.  The reverse applies when only the native
+  driver is present.
+* ``transport="http"``  / ``transport="native"`` — explicit; no fallback.
 """
 
 import importlib.util
@@ -85,25 +94,32 @@ class ClickHouseConnector(BaseConnector):
             host:      ClickHouse server hostname or IP.
             port:      Override the default port.  When omitted the port is
                        chosen based on transport and the ``secure`` kwarg:
-                       HTTP  → 8443 (TLS) / 8123 (plain)
-                       Native→ 9440 (TLS) / 9000 (plain)
+                       HTTP   → 8443 (TLS) / 8123 (plain)
+                       Native → 9440 (TLS) / 9000 (plain)
             database:  Database name.  Pass ``None`` for server-mode scanning.
             user:      Username.  Default: ``'default'``.
             password:  Password.  Default: empty string.
             transport: ``'http'``, ``'native'``, or ``None`` (auto-detect).
-                       Auto-detect prefers HTTP when clickhouse-connect is
-                       installed, falling back to native TCP.
+                       Auto-detect tries the driver that is installed; if both
+                       are installed it prefers HTTP but falls back to native
+                       TCP (and vice-versa) when the first connection attempt
+                       fails.  Passing an explicit value disables fallback.
             **kwargs:  Forwarded to the underlying driver, e.g.
                        ``secure=True``, ``verify=False``.
         """
-        self._transport = self._resolve_transport(transport)
+        # Remember whether the caller pinned a transport or left it to auto.
+        self._transport_auto: bool = transport is None
+        self._transport: str = self._resolve_transport(transport)
 
-        # Choose a sensible default port when none was supplied.
+        self._secure: bool = bool(kwargs.get("secure"))
+        # Default ports per transport/TLS combination — used for fallback too.
+        self._http_port: int  = 8443 if self._secure else 8123
+        self._native_port: int = 9440 if self._secure else 9000
+
+        # Remember whether the caller supplied an explicit port.
+        self._port_auto: bool = port is None
         if port is None:
-            if self._transport == "http":
-                port = 8443 if kwargs.get("secure") else 8123
-            else:
-                port = 9440 if kwargs.get("secure") else 9000
+            port = self._http_port if self._transport == "http" else self._native_port
 
         super().__init__(
             host=host,
@@ -131,14 +147,20 @@ class ClickHouseConnector(BaseConnector):
 
     @staticmethod
     def _resolve_transport(transport: Optional[str]) -> str:
-        """Return the transport to use: ``'http'`` or ``'native'``."""
+        """
+        Return the **primary** transport to attempt: ``'http'`` or ``'native'``.
+
+        When *transport* is ``None`` (auto) this picks the primary based on
+        which drivers are installed.  ``connect()`` handles the runtime fallback
+        to the alternate transport when the primary attempt fails.
+        """
         if transport in ("http", "native"):
             return transport
         if transport is not None:
             raise ValueError(
                 f"Unknown transport {transport!r}. Use 'http', 'native', or None (auto)."
             )
-        # Auto-detect: prefer HTTP (clickhouse-connect is the primary driver)
+        # Auto-detect: prefer HTTP when clickhouse-connect is installed.
         if _http_available():
             return "http"
         if _native_available():
@@ -146,39 +168,94 @@ class ClickHouseConnector(BaseConnector):
         raise ImportError(
             "No ClickHouse driver found. Install one of:\n"
             "  pip install clickhouse-connect   # HTTP/HTTPS transport (recommended)\n"
-            "  pip install clickhouse-driver    # native TCP transport"
+            "  pip install clickhouse-driver    # native TCP transport\n"
+            "Or: pip install \"data-dictionary-builder[clickhouse]\"\n"
+            "    pip install \"data-dictionary-builder[clickhouse-native]\""
         )
 
     # ── Connection lifecycle ──────────────────────────────────────────────────
 
+    def _connect_transport(self, transport: str, port: int) -> None:
+        """
+        Open a raw connection using *transport* on *port* and verify it with
+        ``SELECT 1``.  Sets ``self.connection`` on success; raises on failure.
+        """
+        if transport == "http":
+            import clickhouse_connect
+            client = clickhouse_connect.get_client(
+                host=self.host,
+                port=port,
+                database=self.connect_database,
+                username=self.user,       # clickhouse-connect uses 'username'
+                password=self.password,
+                **self._extra_kwargs,
+            )
+            client.query("SELECT 1")
+            self.connection = client
+        else:
+            from clickhouse_driver import Client
+            client = Client(
+                host=self.host,
+                port=port,
+                database=self.connect_database,
+                user=self.user,
+                password=self.password,
+                **self._extra_kwargs,
+            )
+            client.execute("SELECT 1")
+            self.connection = _NativeClient(client)
+
     def connect(self) -> None:
-        """Open a connection to the ClickHouse server."""
+        """
+        Open a connection to the ClickHouse server.
+
+        When *transport* was auto-detected (``transport=None``), a failed
+        attempt on the primary transport is transparently retried on the
+        alternate transport (if its driver is installed).  Explicit transport
+        values never trigger a fallback.
+        """
         try:
-            if self._transport == "http":
-                import clickhouse_connect
-                self.connection = clickhouse_connect.get_client(
-                    host=self.host,
-                    port=self.port,
-                    database=self.connect_database,
-                    username=self.user,       # clickhouse-connect uses 'username'
-                    password=self.password,
-                    **self._extra_kwargs,
+            self._connect_transport(self._transport, self.port)
+            return
+        except Exception as primary_err:
+            if not self._transport_auto:
+                raise ConnectionError(
+                    f"Failed to connect to ClickHouse ({self._transport}): {primary_err}"
                 )
-                self.connection.query("SELECT 1")
-            else:
-                from clickhouse_driver import Client
-                client = Client(
-                    host=self.host,
-                    port=self.port,
-                    database=self.connect_database,
-                    user=self.user,
-                    password=self.password,
-                    **self._extra_kwargs,
-                )
-                client.execute("SELECT 1")
-                self.connection = _NativeClient(client)
-        except Exception as e:
-            raise ConnectionError(f"Failed to connect to ClickHouse: {e}")
+
+        # ── Auto-mode fallback ────────────────────────────────────────────────
+        fallback = "native" if self._transport == "http" else "http"
+        if fallback == "http" and not _http_available():
+            raise ConnectionError(
+                f"Failed to connect to ClickHouse (http): {primary_err}\n"
+                "Install clickhouse-connect for HTTP transport."
+            )
+        if fallback == "native" and not _native_available():
+            raise ConnectionError(
+                f"Failed to connect to ClickHouse (native): {primary_err}\n"
+                "Install clickhouse-driver for native TCP transport."
+            )
+
+        # Use the canonical default port for the fallback transport unless the
+        # caller pinned an explicit port (in which case honour their choice).
+        fallback_port = (
+            (self._http_port if fallback == "http" else self._native_port)
+            if self._port_auto
+            else self.port
+        )
+
+        try:
+            self._connect_transport(fallback, fallback_port)
+            # Promote fallback to active transport so later queries are consistent.
+            self._transport = fallback
+            if self._port_auto:
+                self.port = fallback_port
+        except Exception as fallback_err:
+            raise ConnectionError(
+                f"Failed to connect to ClickHouse on both transports.\n"
+                f"  {self._transport} (port {self.port}): {primary_err}\n"
+                f"  {fallback} (port {fallback_port}): {fallback_err}"
+            )
 
     def disconnect(self) -> None:
         """Close the connection."""

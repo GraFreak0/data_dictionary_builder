@@ -21,7 +21,7 @@
 
 ## 1. Installation
 
-**pip**
+### pip
 
 ```bash
 # Full install — all connectors included by default
@@ -30,45 +30,51 @@ pip install data-dictionary-builder
 # Selective connector installs
 pip install "data-dictionary-builder[postgres]"
 pip install "data-dictionary-builder[mysql]"
-pip install "data-dictionary-builder[clickhouse]"          # HTTP/HTTPS (default)
-pip install "data-dictionary-builder[clickhouse-native]"   # native TCP transport
+pip install "data-dictionary-builder[clickhouse]"         # ClickHouse HTTP/HTTPS (default)
+pip install "data-dictionary-builder[clickhouse-native]"  # ClickHouse native TCP
 pip install "data-dictionary-builder[oracle]"
 pip install "data-dictionary-builder[sqlserver]"
 pip install "data-dictionary-builder[spanner]"
+
+# Everything at once
+pip install "data-dictionary-builder[all]"
 
 # Install from source (editable)
 git clone https://github.com/GraFreak0/data_dictionary_builder.git
 cd data_dictionary_builder
 pip install -e .
-pip install -e ".[dev]"   # includes pytest, black, flake8, mypy
+pip install -e ".[dev]"   # also installs pytest, black, flake8, mypy
 ```
 
-**uv** *(faster resolver — recommended for new projects)*
+### uv *(recommended — faster resolver, built-in virtual environments)*
 
 ```bash
-# Install uv if you don't have it
-pip install uv          # or: curl -LsSf https://astral.sh/uv/install.sh | sh
+# Install uv
+pip install uv
+# or on macOS/Linux: curl -LsSf https://astral.sh/uv/install.sh | sh
 
+# Add to an existing project
 uv add data-dictionary-builder
-uv add "data-dictionary-builder[clickhouse]"          # HTTP/HTTPS
-uv add "data-dictionary-builder[clickhouse-native]"   # native TCP
+uv add "data-dictionary-builder[postgres]"
+uv add "data-dictionary-builder[clickhouse]"         # HTTP/HTTPS
+uv add "data-dictionary-builder[clickhouse-native]"  # native TCP
 uv add "data-dictionary-builder[all]"
 
-# Editable install from source
-For the repo
-git clone https://github.com/username/repo.git data_dictionary_builder
+# Install from source (editable)
+git clone https://github.com/GraFreak0/data_dictionary_builder.git
 cd data_dictionary_builder
-uv sync            # installs all deps from pyproject.toml
-uv sync --extra dev   # also installs dev tools
+uv sync              # installs all dependencies from pyproject.toml
+uv sync --extra dev  # also installs dev tools
+uv pip install -e .  # editable install into the uv-managed venv
 ```
 
-For a **minimal driver-only install**, add packages directly:
+### Individual drivers (minimal install)
 
 ```bash
 pip install psycopg2-binary          # PostgreSQL
 pip install PyMySQL                  # MySQL / MariaDB
-pip install clickhouse-connect       # ClickHouse (HTTP transport)
-pip install clickhouse-driver        # ClickHouse (native TCP, optional)
+pip install clickhouse-connect       # ClickHouse HTTP/HTTPS transport
+pip install clickhouse-driver        # ClickHouse native TCP transport (optional)
 pip install oracledb                 # Oracle Database
 pip install pymssql                  # SQL Server / Azure SQL
 pip install google-cloud-spanner     # Google Cloud Spanner
@@ -170,7 +176,7 @@ Requires `PyMySQL`. Omit `database` to scan all databases on the server.
 
 ### ClickHouse
 
-Two transports are supported. Pass `transport` explicitly or omit it to auto-detect (HTTP preferred when both drivers are installed).
+Two transports are supported. Pass `transport` explicitly or omit it to auto-detect.
 
 **Port defaults** — if you don't pass `port`, the connector picks automatically:
 
@@ -178,6 +184,22 @@ Two transports are supported. Pass `transport` explicitly or omit it to auto-det
 |---|---|---|
 | HTTP (`clickhouse-connect`) | **8443** | 8123 |
 | Native TCP (`clickhouse-driver`) | **9440** | 9000 |
+
+**Install the driver(s) you need:**
+
+```bash
+# HTTP/HTTPS transport (recommended default)
+pip install "data-dictionary-builder[clickhouse]"
+uv add "data-dictionary-builder[clickhouse]"
+
+# Native TCP transport
+pip install "data-dictionary-builder[clickhouse-native]"
+uv add "data-dictionary-builder[clickhouse-native]"
+
+# Both (enables automatic fallback)
+pip install "data-dictionary-builder[clickhouse]" "data-dictionary-builder[clickhouse-native]"
+uv add "data-dictionary-builder[clickhouse]" "data-dictionary-builder[clickhouse-native]"
+```
 
 **HTTP / HTTPS — `clickhouse-connect` (recommended, default)**
 
@@ -194,7 +216,7 @@ with MetadataExtractor(
     ...
 ```
 
-**Native TCP — `clickhouse-driver` (optional)**
+**Native TCP — `clickhouse-driver`**
 
 ```python
 with MetadataExtractor(
@@ -204,13 +226,13 @@ with MetadataExtractor(
     database="default",
     user="default",
     password="secret",
-    transport="native",     # requires: pip install clickhouse-driver  (or: uv add "data-dictionary-builder[clickhouse-native]")
+    transport="native",
     secure=True,
 ) as ext:
     ...
 ```
 
-`transport` accepts `"http"`, `"native"`, or `None` (auto-detect). Auto-detect prefers HTTP when `clickhouse-connect` is installed. Install HTTP support with `ddgen install clickhouse`. Metadata is read from `system.columns` using a 2-query bulk approach.
+`transport` accepts `"http"`, `"native"`, or `None` (auto-detect). When `transport=None` and both drivers are installed, the connector tries HTTP first and automatically falls back to native TCP if the connection fails (and vice-versa). Passing an explicit transport disables this fallback. Metadata is read from `system.columns` using a 2-query bulk approach.
 
 ### Oracle Database
 

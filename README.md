@@ -19,8 +19,8 @@ pip install data-dictionary-builder
 # With the connectors you need
 pip install "data-dictionary-builder[postgres]"
 pip install "data-dictionary-builder[mysql]"
-pip install "data-dictionary-builder[clickhouse]"          # HTTP/HTTPS transport
-pip install "data-dictionary-builder[clickhouse-native]"   # native TCP transport
+pip install "data-dictionary-builder[clickhouse]"         # ClickHouse HTTP/HTTPS
+pip install "data-dictionary-builder[clickhouse-native]"  # ClickHouse native TCP
 pip install "data-dictionary-builder[spanner]"
 pip install "data-dictionary-builder[oracle]"
 pip install "data-dictionary-builder[sqlserver]"
@@ -29,28 +29,27 @@ pip install "data-dictionary-builder[sqlserver]"
 pip install "data-dictionary-builder[all]"
 ```
 
-**uv** *(faster dependency resolver — recommended for new projects)*
+**uv** *(recommended — faster resolver, built-in virtual environments)*
 
 ```bash
-# Install uv if you don't have it
-pip install uv          # or: curl -LsSf https://astral.sh/uv/install.sh | sh
+# Install uv
+pip install uv
+# or on macOS/Linux: curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Core library
+# Add to your project
 uv add data-dictionary-builder
 
 # With specific connectors
 uv add "data-dictionary-builder[postgres]"
 uv add "data-dictionary-builder[mysql]"
-uv add "data-dictionary-builder[clickhouse]"          # HTTP/HTTPS transport
-uv add "data-dictionary-builder[clickhouse-native]"   # native TCP transport
+uv add "data-dictionary-builder[clickhouse]"         # ClickHouse HTTP/HTTPS
+uv add "data-dictionary-builder[clickhouse-native]"  # ClickHouse native TCP
 uv add "data-dictionary-builder[oracle]"
 uv add "data-dictionary-builder[sqlserver]"
+uv add "data-dictionary-builder[spanner]"
 
 # Everything at once
 uv add "data-dictionary-builder[all]"
-
-# Run from source without a persistent install
-uv run --with data-dictionary-builder python your_script.py
 ```
 
 Or use the CLI to install connectors after the fact:
