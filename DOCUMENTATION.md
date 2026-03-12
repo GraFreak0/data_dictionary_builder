@@ -21,48 +21,17 @@
 
 ## 1. Installation
 
-**pip**
-
 ```bash
 # Full install — all connectors included by default
 pip install data-dictionary-builder
 
-# Selective connector installs
-pip install "data-dictionary-builder[postgres]"
-pip install "data-dictionary-builder[mysql]"
-pip install "data-dictionary-builder[clickhouse]"          # HTTP/HTTPS (default)
-pip install "data-dictionary-builder[clickhouse-native]"   # native TCP transport
-pip install "data-dictionary-builder[oracle]"
-pip install "data-dictionary-builder[sqlserver]"
-pip install "data-dictionary-builder[spanner]"
-
-# Install from source (editable)
+# Install from source (also installs all connectors)
 git clone https://github.com/GraFreak0/data_dictionary_builder.git
 cd data_dictionary_builder
 pip install -e .
-pip install -e ".[dev]"   # includes pytest, black, flake8, mypy
 ```
 
-**uv** *(faster resolver — recommended for new projects)*
-
-```bash
-# Install uv if you don't have it
-pip install uv          # or: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-uv add data-dictionary-builder
-uv add "data-dictionary-builder[clickhouse]"          # HTTP/HTTPS
-uv add "data-dictionary-builder[clickhouse-native]"   # native TCP
-uv add "data-dictionary-builder[all]"
-
-# Editable install from source
-For the repo
-git clone https://github.com/username/repo.git data_dictionary_builder
-cd data_dictionary_builder
-uv sync            # installs all deps from pyproject.toml
-uv sync --extra dev   # also installs dev tools
-```
-
-For a **minimal driver-only install**, add packages directly:
+For a **minimal install**, use `--no-deps` then add only what you need:
 
 ```bash
 pip install psycopg2-binary          # PostgreSQL
@@ -204,7 +173,7 @@ with MetadataExtractor(
     database="default",
     user="default",
     password="secret",
-    transport="native",     # requires: pip install clickhouse-driver  (or: uv add "data-dictionary-builder[clickhouse-native]")
+    transport="native",     # requires: pip install clickhouse-driver
     secure=True,
 ) as ext:
     ...
