@@ -10,6 +10,8 @@ A Python library that automates database documentation — extract live schema m
 
 ## Installation
 
+**pip**
+
 ```bash
 # Core library (SQLite works out of the box)
 pip install data-dictionary-builder
@@ -17,13 +19,37 @@ pip install data-dictionary-builder
 # With the connectors you need
 pip install "data-dictionary-builder[postgres]"
 pip install "data-dictionary-builder[mysql]"
-pip install "data-dictionary-builder[clickhouse]"
+pip install "data-dictionary-builder[clickhouse]"         # ClickHouse HTTP/HTTPS
+pip install "data-dictionary-builder[clickhouse-native]"  # ClickHouse native TCP
 pip install "data-dictionary-builder[spanner]"
 pip install "data-dictionary-builder[oracle]"
 pip install "data-dictionary-builder[sqlserver]"
 
 # Everything at once
 pip install "data-dictionary-builder[all]"
+```
+
+**uv** *(recommended — faster resolver, built-in virtual environments)*
+
+```bash
+# Install uv
+pip install uv
+# or on macOS/Linux: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Add to your project
+uv add data-dictionary-builder
+
+# With specific connectors
+uv add "data-dictionary-builder[postgres]"
+uv add "data-dictionary-builder[mysql]"
+uv add "data-dictionary-builder[clickhouse]"         # ClickHouse HTTP/HTTPS
+uv add "data-dictionary-builder[clickhouse-native]"  # ClickHouse native TCP
+uv add "data-dictionary-builder[oracle]"
+uv add "data-dictionary-builder[sqlserver]"
+uv add "data-dictionary-builder[spanner]"
+
+# Everything at once
+uv add "data-dictionary-builder[all]"
 ```
 
 Or use the CLI to install connectors after the fact:
