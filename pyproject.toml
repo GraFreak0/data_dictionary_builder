@@ -7,7 +7,7 @@ name = "data-dictionary-builder"
 version = "0.1.1"
 description = "Extract database metadata, generate dbt-compatible YAML, compare schemas, and deliver reports — all in a single Python import."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
     {name = "Isaiah Johnson", email = "d8aguy@mail.com"}
@@ -20,7 +20,6 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -55,6 +54,7 @@ dependencies = [
 postgres    = ["psycopg2-binary>=2.9.9"]
 mysql       = ["PyMySQL>=1.1.0"]
 clickhouse  = ["clickhouse-connect>=0.7.0"]
+clickhouse-native = ["clickhouse-driver>=0.2.7"]
 spanner     = ["google-cloud-spanner>=3.40.0"]
 oracle      = ["oracledb>=2.0.0"]
 sqlserver   = ["pymssql>=2.2.0"]
