@@ -1,101 +1,168 @@
 """
 db_metadata_dag.py
 ==================
-Airflow DAG — full data_dictionary_builder pipeline.
+Airflow DAG — data_dictionary_builder multi-pipeline metadata pipeline.
 
-Task pipeline
--------------
-    1.  connection_test          Verify source + destination DB connections
-    2.  list_schemas             List all schemas on source
-    3.  list_tables              List tables in the target schema
-    4a. extract_metadata         Full parallel metadata extraction → XCom
-    4b. extract_single_schema    Extract one schema → XCom (runs in parallel with 4a)
-    4c. extract_single_table     Extract one table  → XCom (runs in parallel with 4a)
-    5.  generate_yaml_files      Write per-schema dbt YAML files
-    6.  generate_combined_yaml   Write a single all_models.yml
-    7.  detect_doc_gaps          Find tables / columns without descriptions
-    8.  compare_schemas          Source vs destination diff → combined report
-    9.  compile_pdf              Compile report JSON → PDF
-    10. send_email               Email PDF report
-    11. export_metadata          Export metadata JSON + round-trip validation
-
-Configuration
--------------
-All parameters are read from Airflow Variables (set them in Admin → Variables)
-or from environment variables / a ``.env`` file in the worker's working directory.
-
-Connections
------------
-Create connections in Admin → Connections (or via ``airflow connections add``):
-
-    source_db_conn    — source database
-    dest_db_conn      — destination / staging database
-    smtp_conn         — SMTP email server  (conn_type=smtp, optional)
-
-See ``include/dd_builder_tasks.py`` for the full connection resolution logic
-and the list of supported environment variable names.
-
-Variable reference
+What this DAG does
 ------------------
-Variable name               Default value               Description
-─────────────────────────── ─────────────────────────── ──────────────────────────────
-dd_source_conn_id           source_db_conn              Airflow conn ID for source DB
-dd_dest_conn_id             dest_db_conn                Airflow conn ID for dest DB
-dd_smtp_conn_id             smtp_conn                   Airflow conn ID for SMTP
-dd_schema_filter            <none — all schemas>        Comma-separated schema filter
-dd_target_schema            public                      Schema used for single-schema tasks
-dd_target_table             <first table listed>        Table used for single-table task
-dd_parallel_workers         8                           Extraction thread count
-dd_yaml_output_dir          /opt/airflow/models         dbt YAML output path
-dd_report_base_dir          /opt/airflow/reports        DDHelper base directory
-dd_alert_email              <none>                      Report recipient email address
-dd_email_subject            Database Schema Report      Email subject line
-dd_schedule                 0 2 * * *                   Cron schedule (daily 02:00)
+For each configured pipeline (source database → destination warehouse):
+
+  1.  Extract source metadata     Pull column/table/schema info from the source DB.
+  2.  Extract destination metadata Pull a snapshot from the warehouse (run in parallel
+                                   with step 1 so both connections happen simultaneously).
+  3.  Generate dbt YAML files     Write one model YAML per source schema.
+  4.  Detect documentation gaps   Report undocumented tables and columns in the source.
+  5.  Compare [schema] × N        One task per schema — source (baseline) vs warehouse.
+                                   All schema comparisons run in parallel within a pipeline.
+  6.  Compile PDF                 Combine all comparison reports into a single PDF.
+  7.  Send email                  Email the PDF report to the configured recipient.
+  8.  Export metadata             Write source metadata to JSON + validate round-trip.
+
+Multiple pipelines run in parallel so different source servers and warehouse
+instances are processed simultaneously without blocking each other.
+
+──────────────────────────────────────────────────────────────────────────────
+Airflow UI — what you'll see
+──────────────────────────────────────────────────────────────────────────────
+Each pipeline appears as a collapsed TaskGroup named ``pipeline__{label}``.
+Inside each group you'll see individual tasks for every schema being compared:
+
+    pipeline__prod_to_analytics
+    ├── test_connections
+    ├── extract_source
+    ├── extract_destination
+    ├── generate_yaml
+    ├── detect_doc_gaps
+    ├── compare__public          ← one node per schema, run in parallel
+    ├── compare__analytics
+    ├── compare__reporting
+    ├── compile_pdf
+    ├── send_email
+    └── export_metadata
+
+──────────────────────────────────────────────────────────────────────────────
+Configuration — Airflow Variables
+──────────────────────────────────────────────────────────────────────────────
+Set these in Admin → Variables (or as environment variables):
+
+dd_pipelines  (JSON array — primary config)
+    A list of pipeline objects.  Each pipeline connects one source database
+    to one destination warehouse.  Example:
+
+    [
+      {
+        "label":          "prod_to_analytics",
+        "source_conn_id": "source_postgres_prod",
+        "dest_conn_id":   "warehouse_analytics",
+        "schemas":        ["public", "analytics", "reporting"],
+        "schema_filter":  null,
+        "parallel_workers": 8,
+        "email_to":       "analytics-team@company.com",
+        "email_subject":  "Prod → Analytics Comparison"
+      },
+      {
+        "label":          "mysql_to_reporting",
+        "source_conn_id": "source_mysql_ops",
+        "dest_conn_id":   "warehouse_reporting",
+        "schemas":        ["orders", "inventory"],
+        "parallel_workers": 4
+      }
+    ]
+
+    Pipeline object fields:
+      label           (required) Unique identifier — used in task group names
+                                  and output file names.
+      source_conn_id  (required) Airflow connection ID for the source database.
+      dest_conn_id    (required) Airflow connection ID for the destination warehouse.
+      schemas         (required) Explicit list of schema names to process.
+                                  Each schema gets its own compare task in the UI.
+      schema_filter   (optional) Filter string (comma-separated) passed to
+                                  extract_all_schemas().  Overrides ``schemas``
+                                  when provided for the extraction steps; the
+                                  explicit ``schemas`` list is still used to
+                                  generate per-schema compare tasks.
+      parallel_workers (optional, default 8)  Extraction thread count.
+      email_to        (optional) Override the recipient for this pipeline.
+      email_subject   (optional) Override the email subject for this pipeline.
+
+dd_yaml_output_dir   /opt/airflow/models    dbt YAML output path
+dd_report_base_dir   /opt/airflow/reports   DDHelper base directory
+dd_alert_email       <none>                 Default report recipient email
+dd_email_subject     Database Schema Report Default email subject
+dd_smtp_conn_id      smtp_conn              Airflow SMTP connection ID
+dd_schedule          0 2 * * *              Cron schedule (daily 02:00 UTC)
+
+──────────────────────────────────────────────────────────────────────────────
+Single-pipeline fallback (backward compatible)
+──────────────────────────────────────────────────────────────────────────────
+If ``dd_pipelines`` is not set, the DAG falls back to the original single-pipeline
+behaviour using these Variables:
+
+  dd_source_conn_id   source_db_conn   Airflow conn ID for the source database
+  dd_dest_conn_id     dest_db_conn     Airflow conn ID for the destination warehouse
+  dd_schema_filter    <none>           Comma-separated schema filter
+  dd_schemas          <none>           Comma-separated explicit schema list
+  dd_parallel_workers 8                Extraction thread count
+
+──────────────────────────────────────────────────────────────────────────────
+Airflow Connection setup
+──────────────────────────────────────────────────────────────────────────────
+Create connections in Admin → Connections (or ``airflow connections add``):
+
+  source_postgres_prod   — source PostgreSQL production database
+  source_mysql_ops       — source MySQL operations database
+  warehouse_analytics    — ClickHouse / BigQuery / Redshift analytics warehouse
+  warehouse_reporting    — separate warehouse instance for reporting data
+  smtp_conn              — SMTP server for emailing reports (conn_type=smtp)
+
+See ``include/dd_builder_tasks.py`` for the full connection resolution logic.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
+from typing import Any, Dict, List
 
-# ── Add the include/ directory to sys.path so we can import dd_builder_tasks ──
-_DAG_DIR     = Path(__file__).parent          # .../dags/
-_INCLUDE_DIR = _DAG_DIR.parent / "include"   # .../include/
+import pendulum
+from dotenv import load_dotenv
+
+
+_DAG_DIR     = Path(__file__).parent
+_INCLUDE_DIR = Path(__file__).parents[3] / "plugins"
 if str(_INCLUDE_DIR) not in sys.path:
     sys.path.insert(0, str(_INCLUDE_DIR))
 
-from airflow import DAG
 from airflow.models import Variable
-from airflow.operators.python import PythonOperator
-from airflow.utils.dates import days_ago
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.sdk import DAG, TaskGroup
 
-# Import all task callables from the include script
 from dd_builder_tasks import (
     resolve_db_config,
     run_connection_test,
-    run_list_schemas,
-    run_list_tables,
     run_extract_metadata,
-    run_extract_single_schema,
-    run_extract_single_table,
+    run_extract_destination_metadata,
     run_generate_yaml_files,
-    run_generate_combined_yaml,
     run_detect_documentation_gaps,
-    run_compare_schemas,
+    run_compare_single_schema,
     run_compile_pdf,
     run_send_email,
     run_export_metadata,
 )
 
+log = logging.getLogger(__name__)
+
 
 # ===========================================================================
-# Helper: read Airflow Variable with a fallback
+# Helpers — read Airflow Variables with env-var fallback
 # ===========================================================================
 
 def _var(key: str, default: str = "") -> str:
-    """Read an Airflow Variable; fall back to an env var, then ``default``."""
+    """Read an Airflow Variable, fall back to an env var, then ``default``."""
     try:
         return Variable.get(key, default_var=None) or os.getenv(key.upper(), default)
     except Exception:
@@ -109,367 +176,351 @@ def _var_int(key: str, default: int) -> int:
         return default
 
 
+def _var_json(key: str, default: Any = None) -> Any:
+    """Read an Airflow Variable and parse it as JSON."""
+    raw = _var(key, "")
+    if not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        log.error("Could not parse Variable '%s' as JSON: %s", key, exc)
+        return default
+
+
+def _safe_id(name: str) -> str:
+    """Convert a name to a safe Airflow task/group ID segment."""
+    return name.replace(".", "__").replace("-", "_").replace(" ", "_")
+
+
 # ===========================================================================
 # Pipeline configuration
-# (all values are read at DAG-parse time from Airflow Variables / env vars)
 # ===========================================================================
 
-SOURCE_CONN_ID     = _var("dd_source_conn_id",  "source_db_conn")
-DEST_CONN_ID       = _var("dd_dest_conn_id",    "dest_db_conn")
-SMTP_CONN_ID       = _var("dd_smtp_conn_id",    "smtp_conn")
+# Global output directories (shared across all pipelines)
+YAML_OUTPUT_DIR = _var("dd_yaml_output_dir", "/opt/airflow/models")
+REPORT_BASE_DIR = _var("dd_report_base_dir", "/opt/airflow/reports")
+DEFAULT_SUBJECT = _var("dd_email_subject",   "Database Schema Comparison Report")
+SCHEDULE        = _var("dd_schedule",        "0 2 * * *")
 
-# Schema / table targeting
-_schema_filter_raw = _var("dd_schema_filter", "")
-SCHEMA_FILTER: list = (
-    [s.strip() for s in _schema_filter_raw.split(",") if s.strip()]
-    if _schema_filter_raw
-    else None          # None → extract ALL schemas
-)
-TARGET_SCHEMA  = _var("dd_target_schema",  "public")   # used for single-schema tasks
-TARGET_TABLE   = _var("dd_target_table",   "")         # used for single-table task; set via Variable
+# SMTP — credentials resolved from .env at parse time
+SMTP_HOST     = os.getenv("SMTP_HOST",     "")
+SMTP_PORT     = os.getenv("SMTP_PORT", 587)
+SMTP_USER     = os.getenv("SMTP_USER",     "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 
-# Extraction options
-PARALLEL_WORKERS = _var_int("dd_parallel_workers", 8)
+# Recipient — read from environment variable (set in .env)
+DEFAULT_EMAIL = os.getenv("EMAIL_TO", "")
 
-# Output directories
-YAML_OUTPUT_DIR = _var("dd_yaml_output_dir",  "/opt/airflow/models")
-REPORT_BASE_DIR = _var("dd_report_base_dir",  "/opt/airflow/reports")
+def _load_pipelines() -> List[Dict[str, Any]]:
+    """
+    Return the single hardcoded pipeline:
+        source  — demo_clickhouse   (credentials from Airflow Connection)
+        dest    — clickhouse_local  (credentials from Airflow Connection)
+        schema  — 'default'         (hardcoded)
+    """
+    pl: Dict[str, Any] = {
+        "label":            "demo_to_local",
+        "source_conn_id":   "demo_clickhouse",
+        "dest_conn_id":     "clickhouse_local",
+        "schemas":          ["default"],
+        "schema_filter":    ["default"],
+        "parallel_workers": 8,
+        "email_to":         DEFAULT_EMAIL,
+        "email_subject":    DEFAULT_SUBJECT,
+    }
 
-# Email
-ALERT_EMAIL   = _var("dd_alert_email",   "")
-EMAIL_SUBJECT = _var("dd_email_subject", "Database Schema Comparison Report")
+    pl["source_config"] = resolve_db_config(conn_id=pl["source_conn_id"], db_type="clickhouse", database="default")
+    pl["dest_config"]   = resolve_db_config(conn_id=pl["dest_conn_id"],   db_type="clickhouse", database="default")
 
-# DAG schedule
-SCHEDULE = _var("dd_schedule", "0 2 * * *")   # daily at 02:00 UTC by default
-
-# ---------------------------------------------------------------------------
-# Resolve DB configs once at DAG-parse time so op_kwargs are plain dicts
-# (avoids importing Airflow hooks inside worker processes on remote executors)
-# ---------------------------------------------------------------------------
-SOURCE_DB_CONFIG = resolve_db_config(conn_id=SOURCE_CONN_ID, env_prefix="SOURCE")
-DEST_DB_CONFIG   = resolve_db_config(conn_id=DEST_CONN_ID,   env_prefix="DEST")
+    log.info("Pipeline: %s → %s, schema='default'", pl["source_conn_id"], pl["dest_conn_id"])
+    return [pl]
 
 
-# ===========================================================================
-# DAG definition
-# ===========================================================================
+PIPELINES = _load_pipelines()
 
 default_args = {
     "owner":            "data-team",
     "depends_on_past":  False,
-    "email":            [ALERT_EMAIL] if ALERT_EMAIL else [],
-    "email_on_failure": bool(ALERT_EMAIL),
+    "email":            [DEFAULT_EMAIL] if DEFAULT_EMAIL else [],
+    "email_on_failure": bool(DEFAULT_EMAIL),
     "email_on_retry":   False,
     "retries":          1,
-    "retry_delay":      timedelta(minutes=5),
+    "retry_delay":      timedelta(minutes=2),
 }
 
 with DAG(
     dag_id="db_metadata_pipeline",
     default_args=default_args,
     description=(
-        "Extract database metadata, generate dbt YAML, compare schemas, "
-        "compile a PDF report, and email it."
+        "Extract metadata from source databases, generate dbt YAML model files, "
+        "compare schemas against destination warehouses, compile PDF reports, and email them. "
+        f"Pipelines: {[p['label'] for p in PIPELINES]}"
     ),
     schedule=SCHEDULE,
-    start_date=days_ago(1),
+    start_date=pendulum.datetime(2024, 1, 1, tz="UTC"),
     catchup=False,
     max_active_runs=1,
     tags=["database", "metadata", "dbt", "data_dictionary_builder"],
 ) as dag:
 
-    # ── Task 1: Connection test ────────────────────────────────────────────
-    t_connection_test = PythonOperator(
-        task_id="connection_test",
+    all_configs = []
+    for _pl in PIPELINES:
+        all_configs.append({**_pl["source_config"], "_label": f"SOURCE:{_pl['label']}"})
+        all_configs.append({**_pl["dest_config"],   "_label": f"DEST:{_pl['label']}"})
+
+    t_global_connection_test = PythonOperator(
+        task_id="test_all_connections",
         python_callable=run_connection_test,
-        op_kwargs={
-            "source_config": SOURCE_DB_CONFIG,
-            "dest_config":   DEST_DB_CONFIG,
-        },
-        doc_md="""
-        **Connection Test**
-        Verifies that both source and destination databases are reachable.
-        Fails the pipeline early if either connection is down.
+        op_kwargs={"configs": all_configs},
+        doc_md=f"""
+        **Test All Connections**
+
+        Verifies every source database and destination warehouse before any
+        extraction begins.  Fails the entire DAG run immediately if any
+        connection is down.
+
+        Connections tested:
+        {chr(10).join(f'- **SOURCE** `{p["label"]}`: {p["source_config"].get("db_type")} @ {p["source_config"].get("host")}' for p in PIPELINES)}
+        {chr(10).join(f'- **DEST**   `{p["label"]}`: {p["dest_config"].get("db_type")} @ {p["dest_config"].get("host")}' for p in PIPELINES)}
         """,
     )
-
-    # ── Task 2: List schemas ───────────────────────────────────────────────
-    t_list_schemas = PythonOperator(
-        task_id="list_schemas",
-        python_callable=run_list_schemas,
-        op_kwargs={
-            "db_config": SOURCE_DB_CONFIG,
-            "xcom_key":  "schemas",
-        },
-        doc_md="""
-        **List Schemas**
-        Lists all available schemas on the source database and pushes
-        the result to XCom under key ``schemas``.
-        """,
-    )
-
-    # ── Task 3: List tables ────────────────────────────────────────────────
-    t_list_tables = PythonOperator(
-        task_id="list_tables",
-        python_callable=run_list_tables,
-        op_kwargs={
-            "db_config":   SOURCE_DB_CONFIG,
-            "schema_name": TARGET_SCHEMA,
-            "xcom_key":    "tables",
-        },
-        doc_md="""
-        **List Tables**
-        Lists all tables in ``TARGET_SCHEMA`` and pushes them to XCom
-        under key ``tables``.  Set ``dd_target_schema`` Variable to change
-        which schema is inspected.
-        """,
-    )
-
-    # ── Task 4a: Full metadata extraction ─────────────────────────────────
-    t_extract_metadata = PythonOperator(
-        task_id="extract_metadata",
-        python_callable=run_extract_metadata,
-        op_kwargs={
-            "db_config":        SOURCE_DB_CONFIG,
-            "schema_filter":    SCHEMA_FILTER,
-            "parallel_workers": PARALLEL_WORKERS,
-            "xcom_key":         "db_metadata",
-        },
-        doc_md="""
-        **Extract Full Metadata**
-        Connects to the source database and extracts metadata for all schemas
-        matching ``dd_schema_filter`` (or all schemas when unset).
-        Uses ``parallel_workers`` threads for concurrent extraction.
-        Pushes serialised ``DatabaseMetadata`` to XCom under ``db_metadata``.
-
-        ``dd_schema_filter`` examples:
-        - ``"public,analytics"``           — exact names
-        - ``"prefix:stg_,suffix:_prod"``   — prefix + suffix mix
-        - ``"regex:^raw_\\d{4}$"``         — regex
-        """,
-    )
-
-    # ── Task 4b: Extract single schema ────────────────────────────────────
-    t_extract_single_schema = PythonOperator(
-        task_id="extract_single_schema",
-        python_callable=run_extract_single_schema,
-        op_kwargs={
-            "db_config":   SOURCE_DB_CONFIG,
-            "schema_name": TARGET_SCHEMA,
-            "xcom_key":    "schema_metadata",
-        },
-        doc_md="""
-        **Extract Single Schema**
-        Extracts metadata for ``TARGET_SCHEMA`` only.
-        Pushes serialised ``DatabaseMetadata`` to XCom under ``schema_metadata``.
-        Runs in parallel with ``extract_metadata``.
-        """,
-    )
-
-    # ── Task 4c: Extract single table ─────────────────────────────────────
-    t_extract_single_table = PythonOperator(
-        task_id="extract_single_table",
-        python_callable=run_extract_single_table,
-        op_kwargs={
-            "db_config":   SOURCE_DB_CONFIG,
-            "schema_name": TARGET_SCHEMA,
-            "table_name":  TARGET_TABLE or "orders",   # fallback name for demo
-            "xcom_key":    "table_metadata",
-        },
-        doc_md="""
-        **Extract Single Table**
-        Extracts column-level metadata (PK, FK, nullability, types) for one
-        table.  Set ``dd_target_table`` Variable to control which table is
-        inspected.  Runs in parallel with ``extract_metadata``.
-        """,
-    )
-
-    # ── Task 5: Generate per-schema YAML ──────────────────────────────────
-    t_generate_yaml = PythonOperator(
-        task_id="generate_yaml_files",
-        python_callable=run_generate_yaml_files,
-        op_kwargs={
-            "yaml_output_dir":   YAML_OUTPUT_DIR,
-            "metadata_task_id":  "extract_metadata",
-            "metadata_xcom_key": "db_metadata",
-        },
-        doc_md="""
-        **Generate YAML Files**
-        Pulls ``DatabaseMetadata`` from XCom and writes one dbt-compatible
-        YAML file per schema into ``YAML_OUTPUT_DIR``.
-        Smart merge: existing user descriptions and dbt tests are preserved.
-        """,
-    )
-
-    # ── Task 6: Generate combined YAML ────────────────────────────────────
-    t_generate_combined_yaml = PythonOperator(
-        task_id="generate_combined_yaml",
-        python_callable=run_generate_combined_yaml,
-        op_kwargs={
-            "yaml_output_dir":   YAML_OUTPUT_DIR,
-            "metadata_task_id":  "extract_metadata",
-            "metadata_xcom_key": "db_metadata",
-            "combined_filename": "all_models.yml",
-            "xcom_key":          "combined_yaml_path",
-        },
-        doc_md="""
-        **Generate Combined YAML**
-        Writes a single ``all_models.yml`` containing all schemas and tables.
-        Useful when you prefer one file over per-schema files.
-        """,
-    )
-
-    # ── Task 7: Documentation gap detection ───────────────────────────────
-    t_detect_gaps = PythonOperator(
-        task_id="detect_documentation_gaps",
-        python_callable=run_detect_documentation_gaps,
-        op_kwargs={
-            "metadata_task_id":  "extract_metadata",
-            "metadata_xcom_key": "db_metadata",
-            "xcom_key":          "doc_gaps",
-        },
-        doc_md="""
-        **Detect Documentation Gaps**
-        Scans extracted metadata for tables and columns that have no description.
-        Outputs coverage percentages and pushes the gap lists to XCom under
-        ``doc_gaps`` for downstream alerting or reporting.
-        """,
-    )
-
-    # ── Task 8: Schema comparison ──────────────────────────────────────────
-    t_compare_schemas = PythonOperator(
-        task_id="compare_schemas",
-        python_callable=run_compare_schemas,
-        op_kwargs={
-            "source_config":             SOURCE_DB_CONFIG,
-            "dest_config":               DEST_DB_CONFIG,
-            "schema_names":              SCHEMA_FILTER or [TARGET_SCHEMA],
-            "yaml_output_dir":           YAML_OUTPUT_DIR,
-            "report_base_dir":           REPORT_BASE_DIR,
-            "include_yaml_gaps":         True,
-            "parallel_workers":          PARALLEL_WORKERS,
-            # Reuse already-extracted source metadata — avoids a second DB query
-            "source_metadata_task_id":   "extract_metadata",
-            "source_metadata_xcom_key":  "db_metadata",
-            "xcom_key":                  "comparison_report",
-        },
-        doc_md="""
-        **Compare Schemas**
-        Diffs each schema in ``schema_names`` between source and destination.
-        Reuses the XCom metadata from ``extract_metadata`` for the source so
-        the source DB is not queried again.  Extracts the destination snapshot
-        once and reuses it across all schemas.
-
-        Produces a combined report with:
-        - Missing tables / columns
-        - Data type mismatches
-        - Documentation gap counts
-
-        Saves the report as JSON via DDHelper and pushes it to XCom.
-        """,
-    )
-
-    # ── Task 9: Compile PDF ────────────────────────────────────────────────
-    t_compile_pdf = PythonOperator(
-        task_id="compile_pdf",
-        python_callable=run_compile_pdf,
-        op_kwargs={
-            "report_base_dir":    REPORT_BASE_DIR,
-            "report_task_id":     "compare_schemas",
-            "report_xcom_key":    "comparison_report",
-            "json_path_xcom_key": "report_json_path",
-            "pdf_xcom_key":       "pdf_path",
-        },
-        doc_md="""
-        **Compile PDF**
-        Reads the JSON report saved by ``compare_schemas`` and compiles it
-        into a formatted PDF with cover page, summary table, missing-table
-        list, missing-column list, type-mismatch list, and documentation
-        gap tables.  Requires ``reportlab`` (``pip install reportlab``).
-        """,
-    )
-
-    # ── Task 10: Send email ────────────────────────────────────────────────
-    t_send_email = PythonOperator(
-        task_id="send_email",
-        python_callable=run_send_email,
-        op_kwargs={
-            "report_base_dir":  REPORT_BASE_DIR,
-            "report_task_id":   "compare_schemas",
-            "report_xcom_key":  "comparison_report",
-            "pdf_task_id":      "compile_pdf",
-            "pdf_xcom_key":     "pdf_path",
-            "email_to":         ALERT_EMAIL or None,
-            "subject":          EMAIL_SUBJECT,
-            "smtp_conn_id":     SMTP_CONN_ID or None,
-        },
-        doc_md="""
-        **Send Email**
-        Emails the comparison report with the compiled PDF attached.
-        SMTP credentials are resolved from the Airflow ``smtp_conn``
-        connection, or from ``SMTP_HOST`` / ``SMTP_PORT`` / ``SMTP_USER``
-        / ``SMTP_PASSWORD`` environment variables.
-        Skipped gracefully when no SMTP config is present.
-        """,
-    )
-
-    # ── Task 11: Export metadata + round-trip validation ──────────────────
-    t_export_metadata = PythonOperator(
-        task_id="export_metadata",
-        python_callable=run_export_metadata,
-        op_kwargs={
-            "report_base_dir":   REPORT_BASE_DIR,
-            "metadata_task_id":  "extract_metadata",
-            "metadata_xcom_key": "db_metadata",
-            "xcom_key":          "metadata_export_path",
-        },
-        doc_md="""
-        **Export Metadata + Round-Trip Validation**
-        Serialises the ``DatabaseMetadata`` to a JSON file in
-        ``reports/json/`` via DDHelper.  Then restores it via
-        ``DatabaseMetadata.from_dict()`` and asserts that all tables are
-        preserved — confirming the object is safe for XCom / Airflow task
-        boundaries and downstream catalog APIs.
-        """,
-    )
-
 
     # =========================================================================
-    # Task dependencies
+    # One TaskGroup per pipeline — all pipeline groups run in parallel
     # =========================================================================
-    #
-    # connection_test
-    #   ├── list_schemas
-    #   ├── list_tables
-    #   ├── extract_metadata ──────────────────────────┐
-    #   │     ├── generate_yaml_files                  │
-    #   │     ├── generate_combined_yaml               │
-    #   │     ├── detect_documentation_gaps            │
-    #   │     ├── compare_schemas ──────────────────── │ ──> compile_pdf ──> send_email
-    #   │     └── export_metadata                      │
-    #   ├── extract_single_schema (parallel w/ 4a)     │
-    #   └── extract_single_table  (parallel w/ 4a)     │
-    #                                                   │
-    #   list_tables ──────────────────────────────── feeds TARGET_TABLE Variable
-    #
 
-    # Gate everything behind connection_test
-    t_connection_test >> [
-        t_list_schemas,
-        t_list_tables,
-        t_extract_metadata,
-        t_extract_single_schema,
-        t_extract_single_table,
-    ]
+    pipeline_groups = []
 
-    # Full extraction feeds YAML, gap detection, comparison, and export
-    t_extract_metadata >> [
-        t_generate_yaml,
-        t_generate_combined_yaml,
-        t_detect_gaps,
-        t_compare_schemas,
-        t_export_metadata,
-    ]
+    for pipeline in PIPELINES:
+        label            = pipeline["label"]
+        safe_label       = _safe_id(label)
+        source_cfg       = pipeline["source_config"]
+        dest_cfg         = pipeline["dest_config"]
+        schemas          = pipeline["schemas"]          # explicit list for per-schema tasks
+        schema_filter    = pipeline.get("schema_filter")
+        parallel_workers = pipeline["parallel_workers"]
+        email_to         = pipeline["email_to"]
+        email_subject    = pipeline["email_subject"]
 
-    # Comparison → PDF → email
-    t_compare_schemas >> t_compile_pdf >> t_send_email
+        extraction_filter = schema_filter or schemas
+
+        schema_list_md = "\n".join(f"- `{s}`" for s in schemas)
+
+        with TaskGroup(
+            group_id=f"pipeline__{safe_label}",
+            tooltip=(
+                f"Pipeline: {label} | "
+                f"SOURCE: {source_cfg.get('db_type')} @ {source_cfg.get('host')} | "
+                f"DEST: {dest_cfg.get('db_type')} @ {dest_cfg.get('host')} | "
+                f"Schemas: {schemas}"
+            ),
+        ) as pipeline_group:
+
+            t_extract_source = PythonOperator(
+                task_id="extract_source",
+                python_callable=run_extract_metadata,
+                op_kwargs={
+                    "db_config":        source_cfg,
+                    "schema_filter":    extraction_filter,
+                    "parallel_workers": parallel_workers,
+                    "xcom_key":         "source_metadata",
+                },
+                doc_md=f"""
+                **Extract Source Metadata** — pipeline `{label}`
+
+                Connects to the source database and extracts column-level metadata
+                for all schemas listed below.  The result is pushed to XCom and
+                reused by every downstream task in this pipeline — no second query
+                to the source DB is needed.
+
+                Source: `{source_cfg.get("db_type")}` @ `{source_cfg.get("host")}`
+
+                Schemas extracted:
+                {schema_list_md}
+                """,
+            )
+
+            t_extract_dest = PythonOperator(
+                task_id="extract_destination",
+                python_callable=run_extract_destination_metadata,
+                op_kwargs={
+                    "db_config":        dest_cfg,
+                    "schema_filter":    extraction_filter,
+                    "parallel_workers": parallel_workers,
+                    "xcom_key":         "dest_metadata",
+                },
+                doc_md=f"""
+                **Extract Destination (Warehouse) Metadata** — pipeline `{label}`
+
+                Connects to the destination warehouse and takes a snapshot of the
+                same schemas listed below.  This snapshot is reused by all
+                per-schema comparison tasks so the warehouse is only queried once
+                per pipeline run.
+
+                Destination: `{dest_cfg.get("db_type")}` @ `{dest_cfg.get("host")}`
+
+                Schemas extracted:
+                {schema_list_md}
+                """,
+            )
+
+            t_generate_yaml = PythonOperator(
+                task_id="generate_yaml",
+                python_callable=run_generate_yaml_files,
+                op_kwargs={
+                    "yaml_output_dir":   YAML_OUTPUT_DIR,
+                    "metadata_task_id":  f"pipeline__{safe_label}.extract_source",
+                    "metadata_xcom_key": "source_metadata",
+                },
+                doc_md=f"""
+                **Generate dbt YAML Model Files** — pipeline `{label}`
+
+                Pulls source metadata from XCom and writes one dbt-compatible YAML
+                file per schema into ``{YAML_OUTPUT_DIR}``.
+
+                Smart merge is applied: user-written descriptions, dbt tests, and
+                ``meta`` blocks in existing YAML files are always preserved.
+
+                Schemas documented:
+                {schema_list_md}
+                """,
+            )
+
+            t_detect_gaps = PythonOperator(
+                task_id="detect_doc_gaps",
+                python_callable=run_detect_documentation_gaps,
+                op_kwargs={
+                    "metadata_task_id":  f"pipeline__{safe_label}.extract_source",
+                    "metadata_xcom_key": "source_metadata",
+                    "xcom_key":          "doc_gaps",
+                },
+                doc_md=f"""
+                **Detect Documentation Gaps** — pipeline `{label}`
+
+                Scans source metadata for tables and columns that have no description.
+                Reports table and column coverage percentages.  Results are pushed to
+                XCom for downstream reporting or alerting.
+
+                Schemas checked:
+                {schema_list_md}
+                """,
+            )
+
+            compare_tasks = []
+            for schema in schemas:
+                safe_schema = _safe_id(schema)
+                t_compare = PythonOperator(
+                    task_id=f"compare__{safe_schema}",
+                    python_callable=run_compare_single_schema,
+                    op_kwargs={
+                        "schema_name":              schema,
+                        "yaml_output_dir":          YAML_OUTPUT_DIR,
+                        "report_base_dir":          REPORT_BASE_DIR,
+                        "source_config":            source_cfg,
+                        "dest_config":              dest_cfg,
+                        "include_yaml_gaps":        True,
+                        "source_metadata_task_id":  f"pipeline__{safe_label}.extract_source",
+                        "source_metadata_xcom_key": "source_metadata",
+                        "dest_metadata_task_id":    f"pipeline__{safe_label}.extract_destination",
+                        "dest_metadata_xcom_key":   "dest_metadata",
+                        "xcom_key":                 f"comparison__{safe_schema}",
+                    },
+                    doc_md=f"""
+                    **Compare Schema `{schema}`** — pipeline `{label}`
+
+                    Compares schema `{schema}` between source (baseline) and destination
+                    warehouse.  Surfaces tables, columns, and data types that exist in
+                    the source but are missing or changed in the warehouse.
+
+                    Source      : `{source_cfg.get("db_type")}` @ `{source_cfg.get("host")}`
+                    Destination : `{dest_cfg.get("db_type")}` @ `{dest_cfg.get("host")}`
+                    Schema      : `{schema}`
+
+                    Both source and destination metadata are pulled from XCom —
+                    no additional database connections are opened by this task.
+                    """,
+                )
+                compare_tasks.append(t_compare)
+
+            first_schema_safe = _safe_id(schemas[0])
+
+            t_compile_pdf = PythonOperator(
+                task_id="compile_pdf",
+                python_callable=run_compile_pdf,
+                op_kwargs={
+                    "report_base_dir":    REPORT_BASE_DIR,
+                    "report_task_id":     f"pipeline__{safe_label}.compare__{first_schema_safe}",
+                    "report_xcom_key":    f"comparison__{first_schema_safe}",
+                    "json_path_xcom_key": "report_json_path",
+                    "pdf_xcom_key":       "pdf_path",
+                },
+                doc_md=f"""
+                **Compile PDF Report** — pipeline `{label}`
+
+                Compiles the comparison report JSON into a paginated PDF with a
+                cover page, summary table, missing-table list, missing-column list,
+                type-mismatch list, and documentation gap tables.
+
+                Requires ``reportlab``.  Skips gracefully if not installed.
+                """,
+            )
+
+            t_send_email = PythonOperator(
+                task_id="send_email",
+                python_callable=run_send_email,
+                op_kwargs={
+                    "report_base_dir":  REPORT_BASE_DIR,
+                    "report_task_id":   f"pipeline__{safe_label}.compare__{first_schema_safe}",
+                    "report_xcom_key":  f"comparison__{first_schema_safe}",
+                    "pdf_task_id":      f"pipeline__{safe_label}.compile_pdf",
+                    "pdf_xcom_key":     "pdf_path",
+                    "email_to":         email_to or None,
+                    "subject":          email_subject,
+                    "smtp_host":        SMTP_HOST or None,
+                    "smtp_port":        SMTP_PORT,
+                    "smtp_user":        SMTP_USER or None,
+                    "smtp_password":    SMTP_PASSWORD or None,
+                },
+                doc_md=f"""
+                **Send Email Report** — pipeline `{label}`
+
+                Emails the comparison PDF report to ``{email_to or os.getenv("EMAIL_TO", "(EMAIL_TO)")}``.
+                SMTP credentials are read from Airflow Variables
+                ``SMTP_HOST`` / ``SMTP_PORT`` / ``SMTP_USER`` / ``SMTP_PASSWORD``.
+                Recipient is read from the ``EMAIL_TO`` environment variable.
+                Skips gracefully when no SMTP config is present.
+                """,
+            )
+
+            t_export_metadata = PythonOperator(
+                task_id="export_metadata",
+                python_callable=run_export_metadata,
+                op_kwargs={
+                    "report_base_dir":   REPORT_BASE_DIR,
+                    "metadata_task_id":  f"pipeline__{safe_label}.extract_source",
+                    "metadata_xcom_key": "source_metadata",
+                    "export_filename":   f"{label}_source_metadata.json",
+                    "xcom_key":          "metadata_export_path",
+                },
+                doc_md=f"""
+                **Export Source Metadata** — pipeline `{label}`
+
+                Serialises the source ``DatabaseMetadata`` object to a JSON file
+                in ``reports/json/`` and validates the round-trip (``to_dict()`` →
+                ``from_dict()``) to confirm it is safe for XCom and catalog APIs.
+
+                Output file: ``{label}_source_metadata.json``
+                """,
+            )
+
+            t_extract_source >> [t_generate_yaml, t_detect_gaps, t_export_metadata]
+
+            for t_compare in compare_tasks:
+                [t_generate_yaml, t_extract_dest] >> t_compare
+
+            compare_tasks >> t_compile_pdf >> t_send_email
+
+        pipeline_groups.append(pipeline_group)
+
+    t_global_connection_test >> pipeline_groups
