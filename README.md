@@ -207,10 +207,10 @@ EMAIL_TO=recipient@example.com
 
 ## Documentation
 
-Full user guide, API reference, and troubleshooting: [DOCUMENTATION.md](DOCUMENTATION.md)
+Full user guide, API reference, and troubleshooting: [DOCUMENTATION.md](https://github.com/GraFreak0/data_dictionary_builder/blob/main/DOCUMENTATION.md)
 
 ---
 
 ## License
 
-[MIT](LICENSE) — free to use, modify, and distribute in personal and commercial projects.
+[MIT](https://github.com/GraFreak0/data_dictionary_builder/blob/main/LICENSE) — free to use, modify, and distribute in personal and commercial projects.
