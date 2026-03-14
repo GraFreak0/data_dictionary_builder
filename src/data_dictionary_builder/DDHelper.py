@@ -672,18 +672,22 @@ class DDHelper:
             else:
                 from .notifications.slack_notifier import SlackNotifier  # type: ignore[import]
 
-                notifier = SlackNotifier(token=slack_token)
-                results["slack"] = notifier.send_comparison_report(
-                    target=slack_target,
-                    report=report,
-                    pdf_path=pdf_path,
-                    title=subject or "Database Schema Comparison Report",
-                    pipeline_label=slack_pipeline_label,
-                )
-                logger.info(
-                    "Slack sent=%s  to=%s",
-                    results["slack"], slack_target,
-                )
+                try:
+                    notifier = SlackNotifier(token=slack_token)
+                except ValueError as exc:
+                    logger.error("Slack skipped — invalid token: %s", exc)
+                else:
+                    results["slack"] = notifier.send_comparison_report(
+                        target=slack_target,
+                        report=report,
+                        pdf_path=pdf_path,
+                        title=subject or "Database Schema Comparison Report",
+                        pipeline_label=slack_pipeline_label,
+                    )
+                    logger.info(
+                        "Slack sent=%s  to=%s",
+                        results["slack"], slack_target,
+                    )
 
         return results
 

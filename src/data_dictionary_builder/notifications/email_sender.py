@@ -27,11 +27,12 @@ class EmailSender:
         sender_email: str,
         sender_password: Optional[str] = None,
         use_tls: bool = True,
-        use_ssl: bool = False
+        use_ssl: bool = False,
+        timeout: int = 15,
     ):
         """
         Initialize the email sender.
-        
+
         Args:
             smtp_host: SMTP server host
             smtp_port: SMTP server port
@@ -39,6 +40,7 @@ class EmailSender:
             sender_password: Password for sender email (optional for some SMTP servers)
             use_tls: Whether to use TLS (default: True)
             use_ssl: Whether to use SSL (default: False)
+            timeout: Socket timeout in seconds for SMTP connection (default: 15)
         """
         self.smtp_host = smtp_host
         self.smtp_port = smtp_port
@@ -46,6 +48,7 @@ class EmailSender:
         self.sender_password = sender_password
         self.use_tls = use_tls
         self.use_ssl = use_ssl
+        self.timeout = timeout
     
     def send_comparison_report(
         self,
@@ -134,9 +137,9 @@ class EmailSender:
 
             # Connect to SMTP server and send
             if self.use_ssl:
-                server = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port)
+                server = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=self.timeout)
             else:
-                server = smtplib.SMTP(self.smtp_host, self.smtp_port)
+                server = smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=self.timeout)
                 if self.use_tls:
                     server.starttls()
 

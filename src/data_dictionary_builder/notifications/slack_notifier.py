@@ -85,6 +85,19 @@ class SlackNotifier:
         self._timeout = timeout
         self._client  = None   # lazy — created on first use
 
+        # Detect wrong token type immediately rather than getting a cryptic
+        # 'not_allowed_token_type' error from the API later.
+        if self._token and self._token.startswith("xapp-"):
+            raise ValueError(
+                "The Slack token provided is an app-level token (xapp-…). "
+                "Most Slack API methods require a Bot User OAuth Token (xoxb-…).\n"
+                "To get the correct token:\n"
+                "  1. Go to https://api.slack.com/apps → select your app\n"
+                "  2. Navigate to 'OAuth & Permissions'\n"
+                "  3. Copy the 'Bot User OAuth Token' (starts with xoxb-)\n"
+                "  4. Update SLACK_BOT_TOKEN in your .env file."
+            )
+
     # ── Client lifecycle ──────────────────────────────────────────────────────
 
     @property
