@@ -10,7 +10,7 @@
 6. [Parallel Extraction](#6-parallel-extraction)
 7. [Generating dbt YAML](#7-generating-dbt-yaml)
 8. [Comparing Schemas](#8-comparing-schemas)
-9. [Reports: JSON, PDF, and Email](#9-reports-json-pdf-and-email)
+9. [Reports: JSON, PDF, and Notifications](#9-reports-json-pdf-and-notifications)
 10. [Timing Your Pipeline](#10-timing-your-pipeline)
 11. [Airflow Integration](#11-airflow-integration)
 12. [CLI Reference](#12-cli-reference)
@@ -566,9 +566,9 @@ results = comparator.extract_and_compare_all(
 
 ---
 
-## 9. Reports: JSON, PDF, and Email
+## 9. Reports: JSON, PDF, and Notifications
 
-`DDHelper` manages the standard output directory layout and handles all three report delivery mechanisms.
+`DDHelper` manages the standard output directory layout and handles all report delivery mechanisms: JSON persistence, PDF compilation, email, and Slack.
 
 ### Setting Up DDHelper
 
@@ -602,9 +602,43 @@ pdf_path = helper.compile_pdf()
 
 The PDF is paginated with a table of contents, summary tables, and complete data — no row limits, no truncation. Requires `reportlab` (`pip install reportlab`).
 
-### Send by Email
+### Unified Notifications — `send_notification`
+
+`send_notification` is the recommended API. It routes to email, Slack, or both based on a single `notification_type` parameter and returns a status dict.
 
 ```python
+results = helper.send_notification(
+    notification_type="both",               # "email" | "slack" | "both"
+    report=report,
+    pdf_path=pdf_path,
+    subject="Nightly schema drift — prod",
+    # Email params (fall back to SMTP_* env vars)
+    email_to="data-team@company.com",
+    # Slack params (fall back to SLACK_BOT_TOKEN / SLACK_NOTIFY_TARGET env vars)
+    slack_target="#data-alerts",            # or "@username", "C…", "U…"
+)
+# results → {"email": True, "slack": True}
+```
+
+#### Notification env vars
+
+| Env var | Used by | Description |
+|---|---|---|
+| `NOTIFICATION_TYPE` | test scripts | `"email"`, `"slack"`, or `"both"` |
+| `SMTP_HOST` | email | SMTP server hostname |
+| `SMTP_PORT` | email | SMTP port (default `587`) |
+| `SMTP_USER` | email | Sender address |
+| `SMTP_PASSWORD` | email | SMTP password / App Password |
+| `EMAIL_TO` | email | Recipient address |
+| `SLACK_BOT_TOKEN` | Slack | Bot User OAuth Token (`xoxb-…`) |
+| `SLACK_NOTIFY_TARGET` | Slack | `"#channel"`, `"@user"`, channel/user ID |
+
+Missing credentials are handled silently — the corresponding channel returns `False` without raising an exception.
+
+### Send by Email Only
+
+```python
+# Legacy API — email only, unchanged
 helper.send_report_email(
     report=report,
     pdf_path=pdf_path,                      # PDF is attached
@@ -613,19 +647,7 @@ helper.send_report_email(
 )
 ```
 
-SMTP credentials are read from environment variables when not passed explicitly:
-
-| Env var | Parameter | Default |
-|---|---|---|
-| `SMTP_HOST` | `smtp_host` | — |
-| `SMTP_PORT` | `smtp_port` | `587` |
-| `SMTP_USER` | `smtp_user` | `""` |
-| `SMTP_PASSWORD` | `smtp_password` | — |
-| `EMAIL_TO` | `email_to` | — |
-
-If `SMTP_HOST` or the recipient address is missing, the call returns `False` silently — it will not raise an exception. This keeps pipelines that run without email configured from failing.
-
-### Override Credentials Explicitly
+Or with explicit credentials:
 
 ```python
 helper.send_report_email(
@@ -638,6 +660,63 @@ helper.send_report_email(
     email_to="recipient@example.com",
     use_tls=True,
 )
+```
+
+### Send to Slack Only
+
+```python
+results = helper.send_notification(
+    notification_type="slack",
+    report=report,
+    pdf_path=pdf_path,          # uploaded as a file attachment
+    subject="Schema drift report",
+    slack_target="#data-alerts",
+    slack_pipeline_label="prod → staging",   # optional header label
+)
+```
+
+#### Slack app setup
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) and create an app.
+2. Under **OAuth & Permissions** add these **Bot Token Scopes**:
+   - `chat:write`
+   - `files:write`
+   - `channels:read`
+   - `users:read`
+   - `im:write`
+3. Install the app to your workspace and copy the **Bot User OAuth Token** (`xoxb-…`).
+4. Invite the bot to any channel you want to post to: `/invite @YourApp`.
+
+#### Slack targets
+
+| Format | Resolves to |
+|---|---|
+| `#general` | Public channel named `general` |
+| `@alice` | DM to the user with display name `alice` |
+| `C012AB3CD` | Channel ID — passed through directly |
+| `U012AB3CD` | User ID — opens a DM channel |
+
+### Using `SlackNotifier` Directly
+
+```python
+from data_dictionary_builder import SlackNotifier
+
+notifier = SlackNotifier(token="xoxb-…")
+
+# Post a formatted comparison report
+notifier.send_comparison_report(
+    target="#data-alerts",
+    report=report,
+    pdf_path=pdf_path,
+    title="Nightly drift report",
+    pipeline_label="prod → staging",
+)
+
+# Send a plain message
+notifier.send_message("#data-alerts", text="Pipeline complete!")
+
+# Upload a file
+notifier.send_file("#data-alerts", file_path=pdf_path, title="Schema Report")
 ```
 
 ### Using `EmailSender` Directly
@@ -695,10 +774,10 @@ with timer.task("YAML generation"):
 with timer.task("Schema comparison"):
     report = comparator.compare_and_generate_report("public")
 
-with timer.task("PDF + email"):
+with timer.task("PDF + notify"):
     json_path = helper.save_report(report)
     pdf_path  = helper.compile_pdf(source_json=json_path)
-    helper.send_report_email(report=report, pdf_path=pdf_path)
+    helper.send_notification("email", report=report, pdf_path=pdf_path)
 
 timer.summary("Nightly Pipeline")
 ```
@@ -936,7 +1015,8 @@ Key constructor parameters:
 | `dirs` | Dict with all four paths |
 | `save_report(report, dt=None)` | Write report to JSON; returns `Path` |
 | `compile_pdf(source_json=None, output_pdf=None)` | JSON → PDF; returns `Path` or `None` |
-| `send_report_email(report, pdf_path=None, subject=None, *, smtp_host, smtp_port, smtp_user, smtp_password, email_to, use_tls)` | Send email; all SMTP params fall back to env vars |
+| `send_notification(notification_type, report, pdf_path=None, subject=None, *, email_to, slack_target, slack_token, ...)` | Send via `"email"`, `"slack"`, or `"both"`; returns `{"email": bool, "slack": bool}` |
+| `send_report_email(report, pdf_path=None, subject=None, *, smtp_host, smtp_port, smtp_user, smtp_password, email_to, use_tls)` | Send email only; all SMTP params fall back to env vars |
 
 ---
 
@@ -957,6 +1037,28 @@ Key constructor parameters:
 |---|---|---|
 | `send_comparison_report(recipient_emails, report, subject=None, attachments=None)` | `bool` | Send formatted HTML report |
 | `send_email(recipient_emails, subject, text_body, html_body=None, attachments=None)` | `bool` | Send custom email |
+
+---
+
+### `SlackNotifier(token=None, timeout=30)`
+
+`token` falls back to the `SLACK_BOT_TOKEN` environment variable.
+
+| Method | Returns | Description |
+|---|---|---|
+| `send_message(target, text=None, blocks=None, thread_ts=None, unfurl_links=False)` | `bool` | Post a plain or Block Kit message |
+| `send_file(target, file_path, title=None, comment=None, thread_ts=None)` | `bool` | Upload a file (e.g. PDF) |
+| `send_comparison_report(target, report, pdf_path=None, title=None, pipeline_label=None, thread_ts=None)` | `bool` | Post a Block Kit comparison summary, optionally uploading a PDF |
+| `send_pipeline_summary(target, pipeline_label, schemas_compared, summary, pdf_path=None)` | `bool` | Post a high-level pipeline summary |
+
+**Target formats:**
+
+| Format | Resolves to |
+|---|---|
+| `#channel-name` | Public/private channel by name |
+| `C012AB3CD` / `G…` / `D…` | Channel, group, or DM ID — passed through directly |
+| `U012AB3CD` / `W…` | User ID — `im:write` scope required |
+| `@alice` | Username lookup via `users:read`; opens a DM |
 
 ---
 
