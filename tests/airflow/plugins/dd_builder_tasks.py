@@ -82,7 +82,7 @@ Available task functions
   run_compare_single_schema       Compare one schema: source (baseline) vs destination
   run_compare_schemas             Compare multiple schemas: source vs destination
   run_compile_pdf                 Compile comparison report JSON → PDF
-  run_send_email                  Email the PDF report
+  run_send_notification           Send the PDF report via email, Slack, or both
   run_export_metadata             Export source metadata to JSON + validate round-trip
 """
 
@@ -1282,6 +1282,132 @@ def run_compile_pdf(
 # Send email
 # ===========================================================================
 
+def run_send_notification(
+    report_base_dir:      str,
+    report_task_id:       str,
+    report_xcom_key:      str = "comparison_report",
+    pdf_task_id:          Optional[str] = None,
+    pdf_xcom_key:         str = "pdf_path",
+    notification_type:    Optional[str] = None,
+    email_to:             Optional[str] = None,
+    subject:              Optional[str] = None,
+    smtp_conn_id:         Optional[str] = None,
+    smtp_host:            Optional[str] = None,
+    smtp_port:            int = 587,
+    smtp_user:            Optional[str] = None,
+    smtp_password:        Optional[str] = None,
+    use_tls:              bool = True,
+    slack_token:          Optional[str] = None,
+    slack_target:         Optional[str] = None,
+    slack_pipeline_label: Optional[str] = None,
+    **context,
+) -> Dict[str, bool]:
+    """
+    Send the schema comparison report via email, Slack, or both.
+
+    Notification type resolution order
+    -----------------------------------
+    1. Explicit ``notification_type`` parameter.
+    2. ``NOTIFICATION_TYPE`` environment variable.
+    3. Default: ``"email"``.
+
+    SMTP credentials resolution order
+    ----------------------------------
+    1. Explicit ``smtp_host / smtp_user / smtp_password`` parameters.
+    2. Airflow Connection (``smtp_conn_id``).
+    3. Environment variables: ``SMTP_HOST``, ``SMTP_PORT``, ``SMTP_USER``,
+       ``SMTP_PASSWORD``, ``EMAIL_TO``.
+
+    Slack credentials resolution order
+    ------------------------------------
+    1. Explicit ``slack_token / slack_target`` parameters.
+    2. Environment variables: ``SLACK_BOT_TOKEN``, ``SLACK_NOTIFY_TARGET``.
+
+    Both channels skip gracefully when credentials are missing — the task
+    succeeds without sending rather than failing the pipeline.
+
+    Parameters
+    ----------
+    report_base_dir      : Base directory for DDHelper.
+    report_task_id       : task_id that pushed the comparison report to XCom.
+    report_xcom_key      : XCom key for the report dict.
+    pdf_task_id          : task_id that pushed the PDF path to XCom (optional).
+    pdf_xcom_key         : XCom key for the PDF path.
+    notification_type    : ``"email"``, ``"slack"``, or ``"both"`` (default: ``"email"``).
+    email_to             : Recipient email address.
+    subject              : Notification subject / title.
+    smtp_conn_id         : Airflow connection ID for the SMTP server.
+    smtp_host / smtp_user / smtp_password : Explicit SMTP credentials.
+    use_tls              : Use STARTTLS (default ``True``).
+    slack_token          : Slack Bot User OAuth Token (``xoxb-…``).
+    slack_target         : Slack channel (``#name`` / ``C…``) or user (``U…``).
+    slack_pipeline_label : Pipeline label shown in the Slack message header.
+    """
+    timer = ExecutionTimer()
+    ti = context.get("task_instance") or context.get("ti")
+
+    report = ti.xcom_pull(task_ids=report_task_id, key=report_xcom_key) if ti else None
+    if not report:
+        raise ValueError(
+            f"No report in XCom (task_id='{report_task_id}', key='{report_xcom_key}'). "
+            "Ensure the comparison task ran successfully."
+        )
+
+    pdf_path: Optional[str] = None
+    if ti and pdf_task_id:
+        pdf_path = ti.xcom_pull(task_ids=pdf_task_id, key=pdf_xcom_key)
+
+    # ── Resolve notification type ─────────────────────────────────────────────
+    nt = (notification_type or os.getenv("NOTIFICATION_TYPE", "email")).lower().strip()
+
+    # ── Resolve SMTP config ───────────────────────────────────────────────────
+    smtp_conn = _get_airflow_conn(smtp_conn_id)
+    if smtp_conn:
+        smtp_host     = smtp_host     or smtp_conn.host
+        smtp_port     = smtp_port     or smtp_conn.port or 587
+        smtp_user     = smtp_user     or smtp_conn.login
+        smtp_password = smtp_password or smtp_conn.password
+
+    smtp_host     = smtp_host     or os.getenv("SMTP_HOST")
+    smtp_port     = smtp_port     or int(os.getenv("SMTP_PORT", 587))
+    smtp_user     = smtp_user     or os.getenv("SMTP_USER", "")
+    smtp_password = smtp_password or os.getenv("SMTP_PASSWORD")
+    email_to      = email_to      or os.getenv("EMAIL_TO")
+
+    # ── Resolve Slack config ──────────────────────────────────────────────────
+    slack_token  = slack_token  or os.getenv("SLACK_BOT_TOKEN")
+    slack_target = slack_target or os.getenv("SLACK_NOTIFY_TARGET")
+
+    with timer.task("Send notification"):
+        helper  = DDHelper(report_base_dir)
+        results = helper.send_notification(
+            notification_type=nt,
+            report=report,
+            pdf_path=Path(pdf_path) if pdf_path else None,
+            subject=subject or "Database Schema Comparison Report",
+            smtp_host=smtp_host,
+            smtp_port=smtp_port,
+            smtp_user=smtp_user,
+            smtp_password=smtp_password,
+            email_to=email_to,
+            use_tls=use_tls,
+            slack_token=slack_token,
+            slack_target=slack_target,
+            slack_pipeline_label=slack_pipeline_label,
+        )
+
+    log.info(
+        "Notification results — email=%s  slack=%s  type=%s",
+        results.get("email"), results.get("slack"), nt,
+    )
+
+    timer.summary("Send Notification")
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible alias
+# ---------------------------------------------------------------------------
 def run_send_email(
     report_base_dir:  str,
     report_task_id:   str,
@@ -1298,79 +1424,25 @@ def run_send_email(
     use_tls:          bool = True,
     **context,
 ) -> bool:
-    """
-    Email the schema comparison report with the compiled PDF attached.
-
-    SMTP credentials resolution order
-    ----------------------------------
-    1. Explicit ``smtp_host / smtp_user / smtp_password`` parameters.
-    2. Airflow Connection (``smtp_conn_id``).
-    3. Environment variables: ``SMTP_HOST``, ``SMTP_PORT``, ``SMTP_USER``,
-       ``SMTP_PASSWORD``, ``EMAIL_TO``.
-
-    Skips gracefully when no SMTP configuration is present — the task
-    succeeds without sending rather than failing the pipeline.
-
-    Parameters
-    ----------
-    report_base_dir  : Base directory for DDHelper.
-    report_task_id   : task_id that pushed the comparison report to XCom.
-    report_xcom_key  : XCom key for the report dict.
-    pdf_task_id      : task_id that pushed the PDF path to XCom (optional).
-    pdf_xcom_key     : XCom key for the PDF path.
-    email_to         : Recipient email address.
-    subject          : Email subject line.
-    smtp_conn_id     : Airflow connection ID for the SMTP server.
-    smtp_host / smtp_user / smtp_password : Explicit SMTP credentials.
-    use_tls          : Use STARTTLS (default ``True``).
-    """
-    timer = ExecutionTimer()
-    ti = context.get("task_instance") or context.get("ti")
-
-    report = ti.xcom_pull(task_ids=report_task_id, key=report_xcom_key) if ti else None
-    if not report:
-        raise ValueError(
-            f"No report in XCom (task_id='{report_task_id}', key='{report_xcom_key}'). "
-            "Ensure the comparison task ran successfully."
-        )
-
-    pdf_path: Optional[str] = None
-    if ti and pdf_task_id:
-        pdf_path = ti.xcom_pull(task_ids=pdf_task_id, key=pdf_xcom_key)
-
-    # ── Resolve SMTP config ───────────────────────────────────────────────────
-    smtp_conn = _get_airflow_conn(smtp_conn_id)
-    if smtp_conn:
-        smtp_host     = smtp_host     or smtp_conn.host
-        smtp_port     = smtp_port     or smtp_conn.port or 587
-        smtp_user     = smtp_user     or smtp_conn.login
-        smtp_password = smtp_password or smtp_conn.password
-
-    smtp_host     = smtp_host     or os.getenv("SMTP_HOST")
-    smtp_port     = smtp_port     or int(os.getenv("SMTP_PORT", 587))
-    smtp_user     = smtp_user     or os.getenv("SMTP_USER", "")
-    smtp_password = smtp_password or os.getenv("SMTP_PASSWORD")
-    email_to      = email_to      or os.getenv("EMAIL_TO")
-
-    with timer.task("Send email"):
-        helper = DDHelper(report_base_dir)
-        sent   = helper.send_report_email(
-            report=report,
-            pdf_path=Path(pdf_path) if pdf_path else None,
-            subject=subject or "Database Schema Comparison Report",
-            smtp_host=smtp_host,
-            smtp_port=smtp_port,
-            smtp_user=smtp_user,
-            smtp_password=smtp_password,
-            email_to=email_to,
-            use_tls=use_tls,
-        )
-
-    status = f"sent to {email_to}" if sent else "skipped (SMTP not configured)"
-    log.info("Email %s", status)
-
-    timer.summary("Send Email")
-    return sent
+    """Backward-compatible wrapper — calls ``run_send_notification`` with ``notification_type='email'``."""
+    result = run_send_notification(
+        report_base_dir=report_base_dir,
+        report_task_id=report_task_id,
+        report_xcom_key=report_xcom_key,
+        pdf_task_id=pdf_task_id,
+        pdf_xcom_key=pdf_xcom_key,
+        notification_type="email",
+        email_to=email_to,
+        subject=subject,
+        smtp_conn_id=smtp_conn_id,
+        smtp_host=smtp_host,
+        smtp_port=smtp_port,
+        smtp_user=smtp_user,
+        smtp_password=smtp_password,
+        use_tls=use_tls,
+        **context,
+    )
+    return result.get("email", False)
 
 
 # ===========================================================================
