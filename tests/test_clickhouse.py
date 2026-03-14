@@ -31,9 +31,15 @@ Destination-specific overrides (fall back to shared values above):
     DEST_CLICKHOUSE_PASSWORD
     DEST_CLICKHOUSE_DB
 
+Notifications (choose one or both):
+    NOTIFICATION_TYPE    "email" | "slack" | "both"  (default: email)
+
 Email (PDF attached automatically):
-    SMTP_HOST  SMTP_PORT  SMTP_USER  SMTP_PASSWORD
-    Reports are always sent to enauk address!
+    SMTP_HOST  SMTP_PORT  SMTP_USER  SMTP_PASSWORD  EMAIL_TO
+
+Slack:
+    SLACK_BOT_TOKEN      xoxb-… Bot Token
+    SLACK_NOTIFY_TARGET  "#channel", "@username", "C…" or "U…"
 """
 
 import json as _json_mod
@@ -51,9 +57,11 @@ from data_dictionary_builder import (
 
 load_dotenv()
 
-CONNECTOR = "clickhouse"
-EMOJI = "🔷 "
-EMAIL_TO = os.getenv("EMAIL_TO", "")
+CONNECTOR           = "clickhouse"
+EMOJI               = "🔷 "
+EMAIL_TO            = os.getenv("EMAIL_TO", "")
+NOTIFICATION_TYPE   = os.getenv("NOTIFICATION_TYPE", "email")
+SLACK_NOTIFY_TARGET = os.getenv("SLACK_NOTIFY_TARGET", "")
 
 # ── Shared / fallback connection values ─────────────────────────────────────
 _CH_HOST      = os.getenv("clickhouse_host", "localhost")
@@ -335,21 +343,26 @@ def test_compile_pdf(helper, json_path):
     return pdf_path
 
 
-def test_email_report(helper, report, pdf_path):
-    section("12. Email Report + PDF Attachment")
+def test_send_notification(helper, report, pdf_path):
+    section(f"12. Send Notification  [{NOTIFICATION_TYPE}]")
     if report is None:
         print("  ⚠  No report – skipping"); return
-    ok = helper.send_report_email(
+    results = helper.send_notification(
+        notification_type=NOTIFICATION_TYPE,
         report=report,
         pdf_path=pdf_path,
         subject="[ClickHouse Test] Schema Comparison Report",
-        smtp_host=os.getenv("SMTP_HOST"),
-        smtp_port=int(os.getenv("SMTP_PORT", 587)),
-        smtp_user=os.getenv("SMTP_USER"),
-        smtp_password=os.getenv("SMTP_PASSWORD"),
         email_to=EMAIL_TO,
+        slack_target=SLACK_NOTIFY_TARGET or None,
     )
-    print(f"  ✓ Email sent to {EMAIL_TO}" if ok else "  ⚠  Email delivery failed – check SMTP env vars")
+    if results.get("email"):
+        print(f"  ✓ Email sent to {EMAIL_TO}")
+    elif NOTIFICATION_TYPE in ("email", "both"):
+        print("  ⚠  Email delivery failed – check SMTP env vars")
+    if results.get("slack"):
+        print(f"  ✓ Slack notification sent to {SLACK_NOTIFY_TARGET}")
+    elif NOTIFICATION_TYPE in ("slack", "both"):
+        print("  ⚠  Slack delivery failed – check SLACK_BOT_TOKEN / SLACK_NOTIFY_TARGET")
 
 
 def test_metadata_export(helper, dest_db_meta):
@@ -415,8 +428,8 @@ if __name__ == "__main__":
     with timer.task("11. Compile PDF"):
         pdf_path = test_compile_pdf(helper, json_path)
 
-    with timer.task("12. Email report"):
-        test_email_report(helper, report, pdf_path)
+    with timer.task("12. Send notification"):
+        test_send_notification(helper, report, pdf_path)
 
     with timer.task("13. Metadata export"):
         test_metadata_export(helper, dest_db_meta)

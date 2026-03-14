@@ -7,6 +7,7 @@ from .metadata.models import DatabaseMetadata, SchemaMetadata, TableMetadata, Co
 from .yaml_generator.generator import YAMLGenerator
 from .comparison.comparator import SchemaComparator
 from .notifications.email_sender import EmailSender
+from .notifications.slack_notifier import SlackNotifier
 from .DDHelper import DDHelper
 from .timer import ExecutionTimer
 
@@ -20,6 +21,7 @@ __all__ = [
     "YAMLGenerator",
     "SchemaComparator",
     "EmailSender",
+    "SlackNotifier",
     "DDHelper",
     "ExecutionTimer",
 ]

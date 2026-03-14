@@ -47,32 +47,38 @@ dependencies = [
     "reportlab>=4.0.0",
     "secure-smtplib>=0.1.1",
     "numpy",
+    "slack-sdk>=3.41.0",
+    "clickhouse-driver>=0.2.10",
 ]
 
 [project.optional-dependencies]
 # Database connectors — install only what you need
 postgres    = ["psycopg2-binary>=2.9.9"]
 mysql       = ["PyMySQL>=1.1.0"]
-clickhouse  = ["clickhouse-connect>=0.7.0"]
-clickhouse-native = ["clickhouse-driver>=0.2.7"]
+clickhouse         = ["clickhouse-connect>=0.7.0"]
+clickhouse-native  = ["clickhouse-driver>=0.2.7"]
+clickhouse-all     = ["clickhouse-connect>=0.7.0", "clickhouse-driver>=0.2.7"]
 spanner     = ["google-cloud-spanner>=3.40.0"]
 oracle      = ["oracledb>=2.0.0"]
 sqlserver   = ["pymssql>=2.2.0"]
 
-# ── Reporting extras ──────────────────────────────────────────────────────────
+# ── Reporting & notification extras ──────────────────────────────────────────
 pdf               = ["reportlab>=4.0.0"]
 email             = ["secure-smtplib>=0.1.1"]
+slack             = ["slack-sdk>=3.41.0"]
 
 # ── Install everything ────────────────────────────────────────────────────────
 all = [
     "psycopg2-binary>=2.9.9",
     "PyMySQL>=1.1.0",
     "clickhouse-connect>=0.7.0",
+    "clickhouse-driver>=0.2.7",        # native TCP transport
     "google-cloud-spanner>=3.40.0",
     "oracledb>=2.0.0",
     "pymssql>=2.2.0",
     "reportlab>=4.0.0",
     "secure-smtplib>=0.1.1",
+    "slack-sdk>=3.41.0",
     "numpy",
 ]
 

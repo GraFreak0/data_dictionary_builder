@@ -149,7 +149,15 @@ report = SchemaComparator(
 
 json_path = helper.save_report(report)
 pdf_path  = helper.compile_pdf(source_json=json_path)
-helper.send_report_email(report=report, pdf_path=pdf_path, email_to="team@example.com")
+
+# Send via email, Slack, or both — credentials fall back to env vars
+helper.send_notification(
+    notification_type="email",   # "email" | "slack" | "both"
+    report=report,
+    pdf_path=pdf_path,
+    email_to="team@example.com",
+    slack_target="#data-alerts",
+)
 ```
 
 ---
@@ -183,7 +191,9 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 - **YAML-aware gap detection** — documentation coverage checks read from your existing YAML files, so descriptions you've added are always recognised
 - **Cross-database comparison** — compare any two database types; type aliases normalised before diffing
 - **PDF reports** — paginated, no row limits, table of contents (requires `reportlab`)
+- **Unified notifications** — `send_notification(notification_type="email"|"slack"|"both", ...)` delivers PDF reports via SMTP email, Slack (channel or DM), or both simultaneously; all credentials fall back to environment variables
 - **Email delivery** — SMTP with env-var credential fallback; PDF attached automatically
+- **Slack delivery** — Block Kit–formatted comparison summaries; optional PDF file upload; supports `#channel`, `@user`, channel IDs, and user IDs
 - **ExecutionTimer** — named task timing with a formatted summary table
 - **Server mode** — omit `database` to scan all databases on a MySQL, ClickHouse, or PostgreSQL server
 - **Rich CLI** — `ddgen extract`, `ddgen compare`, `ddgen features` (full API reference), `ddgen connectors`, `ddgen install`
@@ -195,12 +205,22 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 Set these in a `.env` file (see `tests/.env.example`) or in your shell:
 
 ```bash
-# SMTP — used by DDHelper.send_report_email() when no credentials are passed explicitly
+# ── Notification channel ───────────────────────────────────────────────
+# "email" | "slack" | "both"  (default: email)
+NOTIFICATION_TYPE=email
+
+# ── SMTP — DDHelper.send_notification() / send_report_email() ──────────
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=you@gmail.com
 SMTP_PASSWORD=xxxx xxxx xxxx xxxx
 EMAIL_TO=recipient@example.com
+
+# ── Slack — DDHelper.send_notification() ───────────────────────────────
+# Bot Token Scopes required: chat:write, files:write, channels:read,
+#                            users:read, im:write
+SLACK_BOT_TOKEN=xoxb-your-token-here
+SLACK_NOTIFY_TARGET=#data-alerts   # "#channel", "@user", "C…", or "U…"
 ```
 
 ---

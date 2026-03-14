@@ -7,16 +7,16 @@ What this DAG does
 ------------------
 For each configured pipeline (source database → destination warehouse):
 
-  1.  Extract source metadata     Pull column/table/schema info from the source DB.
+  1.  Extract source metadata      Pull column/table/schema info from the source DB.
   2.  Extract destination metadata Pull a snapshot from the warehouse (run in parallel
-                                   with step 1 so both connections happen simultaneously).
-  3.  Generate dbt YAML files     Write one model YAML per source schema.
-  4.  Detect documentation gaps   Report undocumented tables and columns in the source.
-  5.  Compare [schema] × N        One task per schema — source (baseline) vs warehouse.
-                                   All schema comparisons run in parallel within a pipeline.
-  6.  Compile PDF                 Combine all comparison reports into a single PDF.
-  7.  Send email                  Email the PDF report to the configured recipient.
-  8.  Export metadata             Write source metadata to JSON + validate round-trip.
+                                    with step 1 so both connections happen simultaneously).
+  3.  Generate dbt YAML files      Write one model YAML per source schema.
+  4.  Detect documentation gaps    Report undocumented tables and columns in the source.
+  5.  Compare [schema] × N         One task per schema — source (baseline) vs warehouse.
+                                    All schema comparisons run in parallel within a pipeline.
+  6.  Compile PDF                  Combine all comparison reports into a single PDF.
+  7.  Send notification            Deliver the PDF report via email, Slack, or both.
+  8.  Export metadata              Write source metadata to JSON + validate round-trip.
 
 Multiple pipelines run in parallel so different source servers and warehouse
 instances are processed simultaneously without blocking each other.
@@ -37,7 +37,7 @@ Inside each group you'll see individual tasks for every schema being compared:
     ├── compare__analytics
     ├── compare__reporting
     ├── compile_pdf
-    ├── send_email
+    ├── send_notification
     └── export_metadata
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -82,8 +82,11 @@ dd_pipelines  (JSON array — primary config)
                                   explicit ``schemas`` list is still used to
                                   generate per-schema compare tasks.
       parallel_workers (optional, default 8)  Extraction thread count.
-      email_to        (optional) Override the recipient for this pipeline.
-      email_subject   (optional) Override the email subject for this pipeline.
+      email_to           (optional) Override the recipient for this pipeline.
+      email_subject      (optional) Override the email subject for this pipeline.
+      notification_type  (optional) "email" | "slack" | "both" — overrides the
+                                     NOTIFICATION_TYPE env var for this pipeline.
+      slack_target       (optional) Override SLACK_NOTIFY_TARGET for this pipeline.
 
 dd_yaml_output_dir   /opt/airflow/models    dbt YAML output path
 dd_report_base_dir   /opt/airflow/reports   DDHelper base directory
@@ -91,6 +94,11 @@ dd_alert_email       <none>                 Default report recipient email
 dd_email_subject     Database Schema Report Default email subject
 dd_smtp_conn_id      smtp_conn              Airflow SMTP connection ID
 dd_schedule          0 2 * * *              Cron schedule (daily 02:00 UTC)
+
+Environment variables (notification):
+  NOTIFICATION_TYPE    email | slack | both   (default: email)
+  SLACK_BOT_TOKEN      xoxb-… Bot User OAuth Token
+  SLACK_NOTIFY_TARGET  #channel-name, C…, or U… user ID
 
 ──────────────────────────────────────────────────────────────────────────────
 Single-pipeline fallback (backward compatible)
@@ -150,7 +158,7 @@ from dd_builder_tasks import (
     run_detect_documentation_gaps,
     run_compare_single_schema,
     run_compile_pdf,
-    run_send_email,
+    run_send_notification,
     run_export_metadata,
 )
 
@@ -211,6 +219,11 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 
 # Recipient — read from environment variable (set in .env)
 DEFAULT_EMAIL = os.getenv("EMAIL_TO", "")
+
+# Notification
+DEFAULT_NOTIFICATION_TYPE = os.getenv("NOTIFICATION_TYPE", "email")
+SLACK_BOT_TOKEN           = os.getenv("SLACK_BOT_TOKEN", "")
+SLACK_NOTIFY_TARGET       = os.getenv("SLACK_NOTIFY_TARGET", "")
 
 def _load_pipelines() -> List[Dict[str, Any]]:
     """
@@ -299,9 +312,11 @@ with DAG(
         dest_cfg         = pipeline["dest_config"]
         schemas          = pipeline["schemas"]          # explicit list for per-schema tasks
         schema_filter    = pipeline.get("schema_filter")
-        parallel_workers = pipeline["parallel_workers"]
-        email_to         = pipeline["email_to"]
-        email_subject    = pipeline["email_subject"]
+        parallel_workers    = pipeline["parallel_workers"]
+        email_to            = pipeline["email_to"]
+        email_subject       = pipeline["email_subject"]
+        notification_type   = pipeline.get("notification_type", DEFAULT_NOTIFICATION_TYPE)
+        pipeline_slack_target = pipeline.get("slack_target", SLACK_NOTIFY_TARGET)
 
         extraction_filter = schema_filter or schemas
 
@@ -466,30 +481,41 @@ with DAG(
                 """,
             )
 
-            t_send_email = PythonOperator(
-                task_id="send_email",
-                python_callable=run_send_email,
+            t_send_notification = PythonOperator(
+                task_id="send_notification",
+                python_callable=run_send_notification,
                 op_kwargs={
-                    "report_base_dir":  REPORT_BASE_DIR,
-                    "report_task_id":   f"pipeline__{safe_label}.compare__{first_schema_safe}",
-                    "report_xcom_key":  f"comparison__{first_schema_safe}",
-                    "pdf_task_id":      f"pipeline__{safe_label}.compile_pdf",
-                    "pdf_xcom_key":     "pdf_path",
-                    "email_to":         email_to or None,
-                    "subject":          email_subject,
-                    "smtp_host":        SMTP_HOST or None,
-                    "smtp_port":        SMTP_PORT,
-                    "smtp_user":        SMTP_USER or None,
-                    "smtp_password":    SMTP_PASSWORD or None,
+                    "report_base_dir":      REPORT_BASE_DIR,
+                    "report_task_id":       f"pipeline__{safe_label}.compare__{first_schema_safe}",
+                    "report_xcom_key":      f"comparison__{first_schema_safe}",
+                    "pdf_task_id":          f"pipeline__{safe_label}.compile_pdf",
+                    "pdf_xcom_key":         "pdf_path",
+                    "notification_type":    notification_type,
+                    "email_to":             email_to or None,
+                    "subject":              email_subject,
+                    "smtp_host":            SMTP_HOST or None,
+                    "smtp_port":            SMTP_PORT,
+                    "smtp_user":            SMTP_USER or None,
+                    "smtp_password":        SMTP_PASSWORD or None,
+                    "slack_token":          SLACK_BOT_TOKEN or None,
+                    "slack_target":         pipeline_slack_target or None,
+                    "slack_pipeline_label": label,
                 },
                 doc_md=f"""
-                **Send Email Report** — pipeline `{label}`
+                **Send Notification** — pipeline `{label}`
 
-                Emails the comparison PDF report to ``{email_to or os.getenv("EMAIL_TO", "(EMAIL_TO)")}``.
-                SMTP credentials are read from Airflow Variables
-                ``SMTP_HOST`` / ``SMTP_PORT`` / ``SMTP_USER`` / ``SMTP_PASSWORD``.
-                Recipient is read from the ``EMAIL_TO`` environment variable.
-                Skips gracefully when no SMTP config is present.
+                Delivers the comparison PDF report via ``{notification_type}``.
+
+                - **email** — sends to ``{email_to or os.getenv("EMAIL_TO", "(EMAIL_TO)")}``
+                  using SMTP credentials from ``SMTP_HOST`` / ``SMTP_PORT`` / ``SMTP_USER`` /
+                  ``SMTP_PASSWORD``.
+                - **slack** — posts a Block Kit summary to ``{pipeline_slack_target or "(SLACK_NOTIFY_TARGET)"}``
+                  using the ``SLACK_BOT_TOKEN`` (``xoxb-…``).
+                - **both** — sends email and Slack; each channel skips independently
+                  if credentials are missing.
+
+                Set ``NOTIFICATION_TYPE`` (or the pipeline ``notification_type`` field)
+                to ``"email"``, ``"slack"``, or ``"both"``.
                 """,
             )
 
@@ -519,7 +545,7 @@ with DAG(
             for t_compare in compare_tasks:
                 [t_generate_yaml, t_extract_dest] >> t_compare
 
-            compare_tasks >> t_compile_pdf >> t_send_email
+            compare_tasks >> t_compile_pdf >> t_send_notification
 
         pipeline_groups.append(pipeline_group)
 

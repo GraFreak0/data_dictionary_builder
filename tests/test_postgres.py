@@ -32,8 +32,15 @@ Destination-specific overrides:
     DEST_PG_USER
     DEST_PG_PASSWORD
 
+Notifications (choose one or both):
+    NOTIFICATION_TYPE    "email" | "slack" | "both"  (default: email)
+
 Email (PDF attached automatically):
     SMTP_HOST  SMTP_PORT  SMTP_USER  SMTP_PASSWORD  EMAIL_TO
+
+Slack:
+    SLACK_BOT_TOKEN      xoxb-… Bot Token
+    SLACK_NOTIFY_TARGET  "#channel", "@username", "C…" or "U…"
 """
 
 import json as _json_mod
@@ -52,9 +59,11 @@ from data_dictionary_builder import (
 
 load_dotenv()
 
-CONNECTOR = "postgres"
-EMOJI     = "🐘 "
-EMAIL_TO  = os.getenv("EMAIL_TO", "")
+CONNECTOR           = "postgres"
+EMOJI               = "🐘 "
+EMAIL_TO            = os.getenv("EMAIL_TO", "")
+NOTIFICATION_TYPE   = os.getenv("NOTIFICATION_TYPE", "email")
+SLACK_NOTIFY_TARGET = os.getenv("SLACK_NOTIFY_TARGET", "")
 
 # ── Shared / fallback connection values ──────────────────────────────────────
 _PG_HOST     = os.getenv("PG_HOST", "localhost")
@@ -318,17 +327,26 @@ def test_compile_pdf(helper, json_path):
     return pdf_path
 
 
-def test_email_report(helper, report, pdf_path):
-    section("13. Email Report + PDF Attachment  (optional)")
+def test_send_notification(helper, report, pdf_path):
+    section(f"13. Send Notification  [{NOTIFICATION_TYPE}]")
     if report is None:
         print("  ⚠  No report – skipping"); return
-    ok = helper.send_report_email(
+    results = helper.send_notification(
+        notification_type=NOTIFICATION_TYPE,
         report=report,
         pdf_path=pdf_path,
         subject="[PostgreSQL Test] Schema Comparison Report",
         email_to=EMAIL_TO,
+        slack_target=SLACK_NOTIFY_TARGET or None,
     )
-    print(f"  ✓ Email sent to {EMAIL_TO}" if ok else "  ⚠  SMTP not configured – skipped")
+    if results.get("email"):
+        print(f"  ✓ Email sent to {EMAIL_TO}")
+    elif NOTIFICATION_TYPE in ("email", "both"):
+        print("  ⚠  Email delivery failed – check SMTP env vars")
+    if results.get("slack"):
+        print(f"  ✓ Slack notification sent to {SLACK_NOTIFY_TARGET}")
+    elif NOTIFICATION_TYPE in ("slack", "both"):
+        print("  ⚠  Slack delivery failed – check SLACK_BOT_TOKEN / SLACK_NOTIFY_TARGET")
 
 
 def test_metadata_export(helper, dest_db_meta):
@@ -401,8 +419,8 @@ if __name__ == "__main__":
     with timer.task("12. Compile PDF"):
         pdf_path = test_compile_pdf(helper, json_path)
 
-    with timer.task("13. Email report"):
-        test_email_report(helper, report, pdf_path)
+    with timer.task("13. Send notification"):
+        test_send_notification(helper, report, pdf_path)
 
     with timer.task("14. Metadata export + round-trip"):
         test_metadata_export(helper, dest_db_meta)

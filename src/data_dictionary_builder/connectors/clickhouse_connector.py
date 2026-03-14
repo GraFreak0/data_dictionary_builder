@@ -166,14 +166,44 @@ class ClickHouseConnector(BaseConnector):
         if _native_available():
             return "native"
         raise ImportError(
-            "No ClickHouse driver found. Install one of:\n"
-            "  pip install clickhouse-connect   # HTTP/HTTPS transport (recommended)\n"
-            "  pip install clickhouse-driver    # native TCP transport\n"
-            "Or: pip install \"data-dictionary-builder[clickhouse]\"\n"
-            "    pip install \"data-dictionary-builder[clickhouse-native]\""
+            "No ClickHouse driver found. Install at least one:\n\n"
+            "  HTTP/HTTPS transport (ClickHouse Cloud, default):\n"
+            "    pip install clickhouse-connect\n"
+            "    pip install \"data-dictionary-builder[clickhouse]\"\n"
+            "    uv add \"data-dictionary-builder[clickhouse]\"\n\n"
+            "  Native TCP transport (Altinity, on-prem):\n"
+            "    pip install clickhouse-driver\n"
+            "    pip install \"data-dictionary-builder[clickhouse-native]\"\n"
+            "    uv add \"data-dictionary-builder[clickhouse-native]\"\n\n"
+            "  Both transports:\n"
+            "    pip install \"data-dictionary-builder[clickhouse-all]\"\n"
+            "    uv add \"data-dictionary-builder[clickhouse-all]\""
         )
 
     # ── Connection lifecycle ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _make_ssl_pool_manager(secure: bool, verify: bool):
+        """
+        Return a urllib3 PoolManager with a custom SSL context, or ``None``
+        when a secure connection is not requested.
+
+        The custom context applies ``ssl.OP_IGNORE_UNEXPECTED_EOF`` (Python
+        ≥ 3.10) so that ClickHouse Cloud endpoints that close TLS without
+        sending a ``close_notify`` alert do not raise ``SSLEOFError`` or
+        ``SSLZeroReturnError``.
+        """
+        if not secure:
+            return None
+        import ssl
+        import urllib3
+        ctx = ssl.create_default_context()
+        if not verify:
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        if hasattr(ssl, "OP_IGNORE_UNEXPECTED_EOF"):   # Python 3.10+
+            ctx.options |= ssl.OP_IGNORE_UNEXPECTED_EOF
+        return urllib3.PoolManager(ssl_context=ctx)
 
     def _connect_transport(self, transport: str, port: int) -> None:
         """
@@ -181,28 +211,100 @@ class ClickHouseConnector(BaseConnector):
         ``SELECT 1``.  Sets ``self.connection`` on success; raises on failure.
         """
         if transport == "http":
+            if not _http_available():
+                raise ImportError(
+                    "clickhouse-connect is not installed — required for HTTP/HTTPS transport.\n"
+                    "Install with:\n"
+                    "  pip install clickhouse-connect\n"
+                    "  pip install \"data-dictionary-builder[clickhouse]\"\n"
+                    "  uv add \"data-dictionary-builder[clickhouse]\""
+                )
+
             import clickhouse_connect
-            client = clickhouse_connect.get_client(
-                host=self.host,
-                port=port,
-                database=self.connect_database,
-                username=self.user,       # clickhouse-connect uses 'username'
-                password=self.password,
-                **self._extra_kwargs,
-            )
-            client.query("SELECT 1")
+
+            extra   = dict(self._extra_kwargs)
+            secure  = extra.pop("secure", False)
+            verify  = extra.pop("verify", True)
+
+            # Pass a custom pool manager that applies the Python 3.10+
+            # OP_IGNORE_UNEXPECTED_EOF fix for ClickHouse Cloud TLS handshakes.
+            pool = self._make_ssl_pool_manager(secure=secure, verify=verify)
+            if pool is not None and "pool_mgr" not in extra:
+                extra["pool_mgr"] = pool
+
+            try:
+                client = clickhouse_connect.get_client(
+                    host=self.host,
+                    port=port,
+                    database=self.connect_database,
+                    username=self.user,       # clickhouse-connect uses 'username'
+                    password=self.password,
+                    secure=secure,
+                    verify=verify,
+                    **extra,
+                )
+                client.query("SELECT 1")
+            except Exception as exc:
+                msg = str(exc)
+                if "SSL" in msg or "ssl" in msg or "certificate" in msg.lower():
+                    raise ConnectionError(
+                        f"SSL/TLS error connecting to ClickHouse "
+                        f"({self.host}:{port}).\n"
+                        "Common causes:\n"
+                        "  • The server is paused or unreachable — verify it is running.\n"
+                        "  • Wrong port — HTTP uses 8123 (plain) / 8443 (TLS); "
+                        "native TCP uses 9000 / 9440.\n"
+                        "  • Wrong transport — set transport=\"native\" for "
+                        "Altinity / on-prem servers.\n"
+                        "  • Pass verify=False to skip certificate verification "
+                        "for self-signed certs.\n"
+                        f"Original error: {exc}"
+                    ) from exc
+                raise
             self.connection = client
+
         else:
+            if not _native_available():
+                raise ImportError(
+                    "clickhouse-driver is not installed — required for native TCP transport.\n"
+                    "Install with:\n"
+                    "  pip install clickhouse-driver\n"
+                    "  pip install \"data-dictionary-builder[clickhouse-native]\"\n"
+                    "  uv add \"data-dictionary-builder[clickhouse-native]\"\n"
+                    "Or install both transports at once:\n"
+                    "  pip install \"data-dictionary-builder[clickhouse-all]\"\n"
+                    "  uv add \"data-dictionary-builder[clickhouse-all]\""
+                )
+
             from clickhouse_driver import Client
-            client = Client(
-                host=self.host,
-                port=port,
-                database=self.connect_database,
-                user=self.user,
-                password=self.password,
-                **self._extra_kwargs,
-            )
-            client.execute("SELECT 1")
+
+            # clickhouse_driver manages its own SSL — pass secure/verify as-is.
+            extra = dict(self._extra_kwargs)
+
+            try:
+                client = Client(
+                    host=self.host,
+                    port=port,
+                    database=self.connect_database,
+                    user=self.user,
+                    password=self.password,
+                    **extra,
+                )
+                client.execute("SELECT 1")
+            except Exception as exc:
+                msg = str(exc)
+                if "ssl" in msg.lower() or "certificate" in msg.lower():
+                    raise ConnectionError(
+                        f"SSL/TLS error connecting to ClickHouse native TCP "
+                        f"({self.host}:{port}).\n"
+                        "Common causes:\n"
+                        "  • The server is paused or unreachable — verify it is running.\n"
+                        "  • Wrong port — native TCP uses 9000 (plain) / 9440 (TLS).\n"
+                        "  • Wrong transport — set transport=\"http\" for ClickHouse Cloud.\n"
+                        "  • Pass verify=False to skip certificate verification.\n"
+                        f"Original error: {exc}"
+                    ) from exc
+                raise
             self.connection = _NativeClient(client)
 
     def connect(self) -> None:
@@ -227,13 +329,19 @@ class ClickHouseConnector(BaseConnector):
         fallback = "native" if self._transport == "http" else "http"
         if fallback == "http" and not _http_available():
             raise ConnectionError(
-                f"Failed to connect to ClickHouse (http): {primary_err}\n"
-                "Install clickhouse-connect for HTTP transport."
+                f"Failed to connect to ClickHouse ({self._transport}, port {self.port}): {primary_err}\n"
+                "HTTP/HTTPS fallback unavailable — install clickhouse-connect:\n"
+                "  pip install clickhouse-connect\n"
+                "  pip install \"data-dictionary-builder[clickhouse]\"\n"
+                "  uv add \"data-dictionary-builder[clickhouse]\""
             )
         if fallback == "native" and not _native_available():
             raise ConnectionError(
-                f"Failed to connect to ClickHouse (native): {primary_err}\n"
-                "Install clickhouse-driver for native TCP transport."
+                f"Failed to connect to ClickHouse ({self._transport}, port {self.port}): {primary_err}\n"
+                "Native TCP fallback unavailable — install clickhouse-driver:\n"
+                "  pip install clickhouse-driver\n"
+                "  pip install \"data-dictionary-builder[clickhouse-native]\"\n"
+                "  uv add \"data-dictionary-builder[clickhouse-native]\""
             )
 
         # Use the canonical default port for the fallback transport unless the

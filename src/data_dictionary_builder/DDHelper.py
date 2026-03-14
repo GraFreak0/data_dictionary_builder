@@ -36,7 +36,17 @@ Usage
     # Or compile only the most-recently saved one
     pdf_path = helper.compile_pdf(source_json=json_path)
 
-    # Send email with the PDF attached
+    # Send notification — email, Slack, or both
+    helper.send_notification(
+        notification_type="email",   # "email" | "slack" | "both"
+        report=report,
+        pdf_path=pdf_path,
+        subject="Nightly schema drift — analytics",
+        email_to="team@example.com",           # or set EMAIL_TO env var
+        slack_target="#data-alerts",           # or set SLACK_NOTIFY_TARGET env var
+    )
+
+    # Legacy: send email only (unchanged API)
     helper.send_report_email(
         report=report,
         pdf_path=pdf_path,
@@ -564,6 +574,122 @@ class DDHelper:
             ok, email_to, attachments,
         )
         return ok
+
+    # ------------------------------------------------------------------ #
+    # Unified notification delivery                                        #
+    # ------------------------------------------------------------------ #
+
+    def send_notification(
+        self,
+        notification_type: str,
+        report: dict,
+        pdf_path: Optional[Path] = None,
+        subject: Optional[str] = None,
+        *,
+        # ── Email params ─────────────────────────────────────────────────
+        smtp_host: Optional[str] = None,
+        smtp_port: int = 587,
+        smtp_user: Optional[str] = None,
+        smtp_password: Optional[str] = None,
+        email_to: Optional[str] = None,
+        use_tls: bool = True,
+        # ── Slack params ─────────────────────────────────────────────────
+        slack_token: Optional[str] = None,
+        slack_target: Optional[str] = None,
+        slack_pipeline_label: Optional[str] = None,
+    ) -> Dict[str, bool]:
+        """
+        Send a comparison report via one or more notification channels.
+
+        Parameters
+        ----------
+        notification_type : str
+            ``"email"`` — email only.
+            ``"slack"`` — Slack only.
+            ``"both"``  — email **and** Slack.
+        report : dict
+            Comparison report dict (from ``SchemaComparator`` or built manually).
+        pdf_path : Path, optional
+            PDF to attach (email) or upload (Slack).  Skipped when ``None``.
+        subject : str, optional
+            Email subject / Slack message title.
+        smtp_host, smtp_port, smtp_user, smtp_password, email_to, use_tls
+            Email / SMTP credentials.  All fall back to their corresponding
+            ``SMTP_*`` / ``EMAIL_TO`` environment variables.
+        slack_token : str, optional
+            Slack Bot Token (``xoxb-…``).  Falls back to ``SLACK_BOT_TOKEN``.
+        slack_target : str, optional
+            Destination: ``"#channel"``, ``"@username"``, ``"C…"`` (channel ID),
+            or ``"U…"`` (user ID).  Falls back to ``SLACK_NOTIFY_TARGET``.
+        slack_pipeline_label : str, optional
+            Optional label shown in the Slack Block Kit message header.
+
+        Returns
+        -------
+        dict
+            ``{"email": bool, "slack": bool}`` — ``True`` when delivered
+            successfully.  Channels not requested carry ``False``.
+
+        Raises
+        ------
+        ValueError
+            When *notification_type* is not one of the three accepted values.
+        """
+        nt = notification_type.lower().strip()
+        if nt not in ("email", "slack", "both"):
+            raise ValueError(
+                "notification_type must be 'email', 'slack', or 'both'; "
+                f"got {notification_type!r}"
+            )
+
+        results: Dict[str, bool] = {"email": False, "slack": False}
+
+        # ── Email ─────────────────────────────────────────────────────────
+        if nt in ("email", "both"):
+            results["email"] = self.send_report_email(
+                report=report,
+                pdf_path=pdf_path,
+                subject=subject,
+                smtp_host=smtp_host,
+                smtp_port=smtp_port,
+                smtp_user=smtp_user,
+                smtp_password=smtp_password,
+                email_to=email_to,
+                use_tls=use_tls,
+            )
+
+        # ── Slack ─────────────────────────────────────────────────────────
+        if nt in ("slack", "both"):
+            slack_token  = slack_token  or os.getenv("SLACK_BOT_TOKEN")
+            slack_target = slack_target or os.getenv("SLACK_NOTIFY_TARGET")
+
+            if not slack_token or not slack_target:
+                logger.info(
+                    "Slack skipped — set SLACK_BOT_TOKEN and SLACK_NOTIFY_TARGET "
+                    "environment variables (or pass them explicitly) to enable "
+                    "Slack delivery"
+                )
+            else:
+                from .notifications.slack_notifier import SlackNotifier  # type: ignore[import]
+
+                try:
+                    notifier = SlackNotifier(token=slack_token)
+                except ValueError as exc:
+                    logger.error("Slack skipped — invalid token: %s", exc)
+                else:
+                    results["slack"] = notifier.send_comparison_report(
+                        target=slack_target,
+                        report=report,
+                        pdf_path=pdf_path,
+                        title=subject or "Database Schema Comparison Report",
+                        pipeline_label=slack_pipeline_label,
+                    )
+                    logger.info(
+                        "Slack sent=%s  to=%s",
+                        results["slack"], slack_target,
+                    )
+
+        return results
 
     # ------------------------------------------------------------------ #
     # Dunder                                                               #

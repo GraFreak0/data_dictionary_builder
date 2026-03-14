@@ -13,6 +13,9 @@ google-cloud-spanner>=3.40.0  # Google Cloud Spanner
 # Email functionality
 secure-smtplib>=0.1.1
 
+# Slack notifications (optional)
+# slack-sdk>=3.19.0
+
 # PDF report generation (DDHelper)
 reportlab>=4.0.0
 
