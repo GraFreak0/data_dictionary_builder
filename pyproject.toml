@@ -47,6 +47,7 @@ dependencies = [
     "reportlab>=4.0.0",
     "secure-smtplib>=0.1.1",
     "numpy",
+    "slack-sdk>=3.41.0",
 ]
 
 [project.optional-dependencies]
@@ -58,9 +59,10 @@ spanner     = ["google-cloud-spanner>=3.40.0"]
 oracle      = ["oracledb>=2.0.0"]
 sqlserver   = ["pymssql>=2.2.0"]
 
-# ── Reporting extras ──────────────────────────────────────────────────────────
+# ── Reporting & notification extras ──────────────────────────────────────────
 pdf               = ["reportlab>=4.0.0"]
 email             = ["secure-smtplib>=0.1.1"]
+slack             = ["slack-sdk>=3.19.0"]
 
 # ── Install everything ────────────────────────────────────────────────────────
 all = [
@@ -72,6 +74,7 @@ all = [
     "pymssql>=2.2.0",
     "reportlab>=4.0.0",
     "secure-smtplib>=0.1.1",
+    "slack-sdk>=3.19.0",
     "numpy",
 ]
 
