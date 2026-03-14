@@ -8,6 +8,15 @@ A Python library that automates database documentation — extract live schema m
 
 ---
 
+> **What's new in v0.1.2**
+>
+> - **Slack notifications** — deliver schema comparison reports directly to any Slack channel or DM alongside the existing email delivery. Use `notification_type="slack"` or `"both"` in `send_notification()`. Requires a Bot User OAuth Token (`xoxb-…`) and the `slack` extra: `pip install "data-dictionary-builder[slack]"`.
+> - **Optimised metadata generation** — parallel extraction is faster with improved thread scheduling and reduced connection overhead across all supported databases.
+> - **Smarter schema comparison** — type normalisation has been expanded to cover more cross-database equivalences, reducing false-positive mismatches in mixed-engine pipelines.
+> - **Leaner exports** — JSON metadata exports are more compact, and the `to_dict()` / `from_dict()` round-trip is validated automatically to ensure safe use in Airflow XCom and downstream catalog APIs.
+
+---
+
 ## Installation
 
 **pip**
