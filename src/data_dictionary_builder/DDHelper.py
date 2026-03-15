@@ -484,6 +484,15 @@ class DDHelper:
     # Email delivery                                                        #
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _parse_csv_list(value) -> List[str]:
+        """Normalise a comma-separated string, a list, or None into a clean list of strings."""
+        if not value:
+            return []
+        if isinstance(value, (list, tuple)):
+            return [str(v).strip() for v in value if str(v).strip()]
+        return [v.strip() for v in str(value).split(",") if v.strip()]
+
     def send_report_email(
         self,
         report: dict,
@@ -494,7 +503,7 @@ class DDHelper:
         smtp_port: Optional[int] = None,
         smtp_user: Optional[str] = None,
         smtp_password: Optional[str] = None,
-        email_to: Optional[str] = None,
+        email_to=None,
         use_tls: bool = True,
     ) -> bool:
         """
@@ -537,17 +546,17 @@ class DDHelper:
         smtp_port     = smtp_port     or int(os.getenv("SMTP_PORT", 587))
         smtp_user     = smtp_user     or os.getenv("SMTP_USER", "")
         smtp_password = smtp_password or os.getenv("SMTP_PASSWORD")
-        email_to      = email_to      or os.getenv("EMAIL_TO")
 
-        if not smtp_host or not email_to:
+        # Accept a list, a comma-separated string, or a bare address.
+        recipients: List[str] = self._parse_csv_list(email_to or os.getenv("EMAIL_TO", ""))
+
+        if not smtp_host or not recipients:
             logger.info(
                 "Email skipped — set SMTP_HOST and EMAIL_TO environment "
                 "variables (or pass them explicitly) to enable email delivery"
             )
             return False
 
-        # Import EmailSender from within the package so DDHelper has no
-        # circular dependency at module-load time.
         from .notifications.email_sender import EmailSender  # type: ignore[import]
 
         # Strip spaces from app passwords (e.g. Gmail displays them as
@@ -573,7 +582,7 @@ class DDHelper:
             attachments.append(str(pdf_path))
 
         ok = sender.send_comparison_report(
-            recipient_emails=[email_to],
+            recipient_emails=recipients,
             report=report,
             subject=subject or "Database Schema Comparison Report",
             attachments=attachments,
@@ -581,7 +590,7 @@ class DDHelper:
 
         logger.info(
             "Email sent=%s  to=%s  attachments=%s",
-            ok, email_to, attachments,
+            ok, recipients, attachments,
         )
         return ok
 
@@ -601,11 +610,11 @@ class DDHelper:
         smtp_port: Optional[int] = None,
         smtp_user: Optional[str] = None,
         smtp_password: Optional[str] = None,
-        email_to: Optional[str] = None,
+        email_to=None,           # str, comma-separated str, or List[str]
         use_tls: bool = True,
         # ── Slack params ─────────────────────────────────────────────────
         slack_token: Optional[str] = None,
-        slack_target: Optional[str] = None,
+        slack_target=None,       # str, comma-separated str, or List[str]
         slack_pipeline_label: Optional[str] = None,
     ) -> Dict[str, bool]:
         """
@@ -670,10 +679,10 @@ class DDHelper:
 
         # ── Slack ─────────────────────────────────────────────────────────
         if nt in ("slack", "both"):
-            slack_token  = slack_token  or os.getenv("SLACK_BOT_TOKEN")
-            slack_target = slack_target or os.getenv("SLACK_NOTIFY_TARGET")
+            slack_token   = slack_token or os.getenv("SLACK_BOT_TOKEN")
+            slack_targets = self._parse_csv_list(slack_target or os.getenv("SLACK_NOTIFY_TARGET", ""))
 
-            if not slack_token or not slack_target:
+            if not slack_token or not slack_targets:
                 logger.info(
                     "Slack skipped — set SLACK_BOT_TOKEN and SLACK_NOTIFY_TARGET "
                     "environment variables (or pass them explicitly) to enable "
@@ -687,17 +696,18 @@ class DDHelper:
                 except ValueError as exc:
                     logger.error("Slack skipped — invalid token: %s", exc)
                 else:
-                    results["slack"] = notifier.send_comparison_report(
-                        target=slack_target,
-                        report=report,
-                        pdf_path=pdf_path,
-                        title=subject or "Database Schema Comparison Report",
-                        pipeline_label=slack_pipeline_label,
-                    )
-                    logger.info(
-                        "Slack sent=%s  to=%s",
-                        results["slack"], slack_target,
-                    )
+                    target_results: List[bool] = []
+                    for _target in slack_targets:
+                        ok = notifier.send_comparison_report(
+                            target=_target,
+                            report=report,
+                            pdf_path=pdf_path,
+                            title=subject or "Database Schema Comparison Report",
+                            pipeline_label=slack_pipeline_label,
+                        )
+                        target_results.append(ok)
+                        logger.info("Slack sent=%s  to=%s", ok, _target)
+                    results["slack"] = all(target_results)
 
         return results
 
