@@ -491,7 +491,7 @@ class DDHelper:
         subject: Optional[str] = None,
         *,
         smtp_host: Optional[str] = None,
-        smtp_port: int = 587,
+        smtp_port: Optional[int] = None,
         smtp_user: Optional[str] = None,
         smtp_password: Optional[str] = None,
         email_to: Optional[str] = None,
@@ -550,12 +550,22 @@ class DDHelper:
         # circular dependency at module-load time.
         from .notifications.email_sender import EmailSender  # type: ignore[import]
 
+        # Strip spaces from app passwords (e.g. Gmail displays them as
+        # "xxxx xxxx xxxx xxxx" but the actual credential has no spaces).
+        if smtp_password:
+            smtp_password = smtp_password.replace(" ", "")
+
+        # Port 465 uses implicit SSL (SMTP_SSL); port 587/25 use STARTTLS.
+        use_ssl = int(smtp_port) == 465
+
         sender = EmailSender(
             smtp_host=smtp_host,
             smtp_port=smtp_port,
             sender_email=smtp_user,
             sender_password=smtp_password,
-            use_tls=use_tls,
+            use_tls=use_tls and not use_ssl,
+            use_ssl=use_ssl,
+            timeout=15,
         )
 
         attachments: List[str] = []
@@ -588,7 +598,7 @@ class DDHelper:
         *,
         # ── Email params ─────────────────────────────────────────────────
         smtp_host: Optional[str] = None,
-        smtp_port: int = 587,
+        smtp_port: Optional[int] = None,
         smtp_user: Optional[str] = None,
         smtp_password: Optional[str] = None,
         email_to: Optional[str] = None,

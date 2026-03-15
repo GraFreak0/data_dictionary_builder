@@ -607,7 +607,7 @@ wheels = [
 
 [[package]]
 name = "data-dictionary-builder"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "click", version = "8.1.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -634,6 +634,7 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "clickhouse-connect" },
+    { name = "clickhouse-driver" },
     { name = "google-cloud-spanner" },
     { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
@@ -648,6 +649,13 @@ all = [
 ]
 clickhouse = [
     { name = "clickhouse-connect" },
+]
+clickhouse-all = [
+    { name = "clickhouse-connect" },
+    { name = "clickhouse-driver" },
+]
+clickhouse-native = [
+    { name = "clickhouse-driver" },
 ]
 dev = [
     { name = "black", version = "25.11.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -689,7 +697,11 @@ requires-dist = [
     { name = "clickhouse-connect", specifier = ">=0.7.0" },
     { name = "clickhouse-connect", marker = "extra == 'all'", specifier = ">=0.7.0" },
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'", specifier = ">=0.7.0" },
+    { name = "clickhouse-connect", marker = "extra == 'clickhouse-all'", specifier = ">=0.7.0" },
     { name = "clickhouse-driver", specifier = ">=0.2.10" },
+    { name = "clickhouse-driver", marker = "extra == 'all'", specifier = ">=0.2.7" },
+    { name = "clickhouse-driver", marker = "extra == 'clickhouse-all'", specifier = ">=0.2.7" },
+    { name = "clickhouse-driver", marker = "extra == 'clickhouse-native'", specifier = ">=0.2.7" },
     { name = "colorlog", specifier = ">=6.8.0" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=6.1.0" },
     { name = "google-cloud-spanner", specifier = ">=3.40.0" },
@@ -723,7 +735,7 @@ requires-dist = [
     { name = "slack-sdk", marker = "extra == 'slack'", specifier = ">=3.41.0" },
     { name = "typing-extensions", specifier = ">=4.9.0" },
 ]
-provides-extras = ["postgres", "mysql", "clickhouse", "spanner", "oracle", "sqlserver", "pdf", "email", "slack", "all", "dev"]
+provides-extras = ["postgres", "mysql", "clickhouse", "clickhouse-native", "clickhouse-all", "spanner", "oracle", "sqlserver", "pdf", "email", "slack", "all", "dev"]
 
 [[package]]
 name = "exceptiongroup"
