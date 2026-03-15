@@ -8,7 +8,7 @@ A Python library that automates database documentation — extract live schema m
 
 ---
 
-> **What's new in v0.1.2**
+> **What's new in v0.1.3**
 >
 > - **Slack notifications** — deliver schema comparison reports directly to any Slack channel or DM alongside the existing email delivery. Use `notification_type="slack"` or `"both"` in `send_notification()`. Requires a Bot User OAuth Token (`xoxb-…`) and the `slack` extra: `pip install "data-dictionary-builder[slack]"`.
 > - **Optimised metadata generation** — parallel extraction is faster with improved thread scheduling and reduced connection overhead across all supported databases.
