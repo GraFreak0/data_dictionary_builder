@@ -213,17 +213,23 @@ SCHEDULE        = _var("dd_schedule",        "0 2 * * *")
 
 # SMTP — credentials resolved from .env at parse time
 SMTP_HOST     = os.getenv("SMTP_HOST",     "")
-SMTP_PORT     = os.getenv("SMTP_PORT", 587)
+SMTP_PORT     = os.getenv("SMTP_PORT")          # None → DDHelper reads env at send time
 SMTP_USER     = os.getenv("SMTP_USER",     "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 
-# Recipient — read from environment variable (set in .env)
-DEFAULT_EMAIL = os.getenv("EMAIL_TO", "")
+# Recipients — comma-separated list supported
+DEFAULT_EMAIL_RECIPIENTS = [
+    e.strip() for e in os.getenv("EMAIL_TO", "").split(",") if e.strip()
+]
+DEFAULT_EMAIL = ", ".join(DEFAULT_EMAIL_RECIPIENTS)   # kept for doc_md strings
 
 # Notification
 DEFAULT_NOTIFICATION_TYPE = os.getenv("NOTIFICATION_TYPE", "email")
 SLACK_BOT_TOKEN           = os.getenv("SLACK_BOT_TOKEN", "")
-SLACK_NOTIFY_TARGET       = os.getenv("SLACK_NOTIFY_TARGET", "")
+DEFAULT_SLACK_TARGETS     = [
+    t.strip() for t in os.getenv("SLACK_NOTIFY_TARGET", "").split(",") if t.strip()
+]
+SLACK_NOTIFY_TARGET = ", ".join(DEFAULT_SLACK_TARGETS)   # kept for doc_md strings
 
 def _load_pipelines() -> List[Dict[str, Any]]:
     """
@@ -239,7 +245,7 @@ def _load_pipelines() -> List[Dict[str, Any]]:
         "schemas":          ["default"],
         "schema_filter":    ["default"],
         "parallel_workers": 8,
-        "email_to":         DEFAULT_EMAIL,
+        "email_to":         DEFAULT_EMAIL_RECIPIENTS,
         "email_subject":    DEFAULT_SUBJECT,
     }
 
@@ -313,10 +319,16 @@ with DAG(
         schemas          = pipeline["schemas"]          # explicit list for per-schema tasks
         schema_filter    = pipeline.get("schema_filter")
         parallel_workers    = pipeline["parallel_workers"]
-        email_to            = pipeline["email_to"]
+        # email_to / slack_target: accept list or comma-separated string from pipeline config
+        _raw_email   = pipeline["email_to"]
+        email_to     = _raw_email if isinstance(_raw_email, list) else [e.strip() for e in str(_raw_email).split(",") if e.strip()]
         email_subject       = pipeline["email_subject"]
         notification_type   = pipeline.get("notification_type", DEFAULT_NOTIFICATION_TYPE)
-        pipeline_slack_target = pipeline.get("slack_target", SLACK_NOTIFY_TARGET)
+        _raw_slack   = pipeline.get("slack_target", DEFAULT_SLACK_TARGETS)
+        pipeline_slack_targets = _raw_slack if isinstance(_raw_slack, list) else [t.strip() for t in str(_raw_slack).split(",") if t.strip()]
+        # Display strings for doc_md
+        email_to_display = ", ".join(email_to)
+        slack_targets_display = ", ".join(pipeline_slack_targets)
 
         extraction_filter = schema_filter or schemas
 
@@ -494,11 +506,11 @@ with DAG(
                     "email_to":             email_to or None,
                     "subject":              email_subject,
                     "smtp_host":            SMTP_HOST or None,
-                    "smtp_port":            SMTP_PORT,
+                    "smtp_port":            int(SMTP_PORT) if SMTP_PORT else None,
                     "smtp_user":            SMTP_USER or None,
                     "smtp_password":        SMTP_PASSWORD or None,
                     "slack_token":          SLACK_BOT_TOKEN or None,
-                    "slack_target":         pipeline_slack_target or None,
+                    "slack_target":         pipeline_slack_targets or None,
                     "slack_pipeline_label": label,
                 },
                 doc_md=f"""
@@ -506,10 +518,11 @@ with DAG(
 
                 Delivers the comparison PDF report via ``{notification_type}``.
 
-                - **email** — sends to ``{email_to or os.getenv("EMAIL_TO", "(EMAIL_TO)")}``
+                - **email** — sends to {len(email_to)} recipient(s): ``{email_to_display or "(EMAIL_TO)"}``
                   using SMTP credentials from ``SMTP_HOST`` / ``SMTP_PORT`` / ``SMTP_USER`` /
                   ``SMTP_PASSWORD``.
-                - **slack** — posts a Block Kit summary to ``{pipeline_slack_target or "(SLACK_NOTIFY_TARGET)"}``
+                - **slack** — posts a Block Kit summary to {len(pipeline_slack_targets)} target(s):
+                  ``{slack_targets_display or "(SLACK_NOTIFY_TARGET)"}``
                   using the ``SLACK_BOT_TOKEN`` (``xoxb-…``).
                 - **both** — sends email and Slack; each channel skips independently
                   if credentials are missing.

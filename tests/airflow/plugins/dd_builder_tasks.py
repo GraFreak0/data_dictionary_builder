@@ -1289,21 +1289,25 @@ def run_send_notification(
     pdf_task_id:          Optional[str] = None,
     pdf_xcom_key:         str = "pdf_path",
     notification_type:    Optional[str] = None,
-    email_to:             Optional[str] = None,
+    email_to=None,                        # str, comma-separated str, or list
     subject:              Optional[str] = None,
     smtp_conn_id:         Optional[str] = None,
     smtp_host:            Optional[str] = None,
-    smtp_port:            int = 587,
+    smtp_port:            Optional[int] = None,
     smtp_user:            Optional[str] = None,
     smtp_password:        Optional[str] = None,
     use_tls:              bool = True,
     slack_token:          Optional[str] = None,
-    slack_target:         Optional[str] = None,
+    slack_target=None,                    # str, comma-separated str, or list
     slack_pipeline_label: Optional[str] = None,
     **context,
 ) -> Dict[str, bool]:
     """
     Send the schema comparison report via email, Slack, or both.
+
+    Both ``email_to`` and ``slack_target`` accept a plain address/ID, a
+    comma-separated string of addresses/IDs, or a Python list — all formats
+    are handled transparently by ``DDHelper.send_notification``.
 
     Notification type resolution order
     -----------------------------------
@@ -1334,13 +1338,13 @@ def run_send_notification(
     pdf_task_id          : task_id that pushed the PDF path to XCom (optional).
     pdf_xcom_key         : XCom key for the PDF path.
     notification_type    : ``"email"``, ``"slack"``, or ``"both"`` (default: ``"email"``).
-    email_to             : Recipient email address.
+    email_to             : One or more recipient addresses (comma-separated string or list).
     subject              : Notification subject / title.
     smtp_conn_id         : Airflow connection ID for the SMTP server.
     smtp_host / smtp_user / smtp_password : Explicit SMTP credentials.
     use_tls              : Use STARTTLS (default ``True``).
     slack_token          : Slack Bot User OAuth Token (``xoxb-…``).
-    slack_target         : Slack channel (``#name`` / ``C…``) or user (``U…``).
+    slack_target         : One or more Slack targets (comma-separated string or list).
     slack_pipeline_label : Pipeline label shown in the Slack message header.
     """
     timer = ExecutionTimer()
@@ -1414,11 +1418,11 @@ def run_send_email(
     report_xcom_key:  str = "comparison_report",
     pdf_task_id:      Optional[str] = None,
     pdf_xcom_key:     str = "pdf_path",
-    email_to:         Optional[str] = None,
+    email_to=None,
     subject:          Optional[str] = None,
     smtp_conn_id:     Optional[str] = None,
     smtp_host:        Optional[str] = None,
-    smtp_port:        int = 587,
+    smtp_port:        Optional[int] = None,
     smtp_user:        Optional[str] = None,
     smtp_password:    Optional[str] = None,
     use_tls:          bool = True,

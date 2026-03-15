@@ -59,9 +59,12 @@ load_dotenv()
 
 CONNECTOR           = "clickhouse"
 EMOJI               = "🔷 "
-EMAIL_TO            = os.getenv("EMAIL_TO", "")
 NOTIFICATION_TYPE   = os.getenv("NOTIFICATION_TYPE", "email")
-SLACK_NOTIFY_TARGET = os.getenv("SLACK_NOTIFY_TARGET", "")
+EMAIL_RECIPIENTS    = [e.strip() for e in os.getenv("EMAIL_TO", "").split(",") if e.strip()]
+SLACK_TARGETS       = [t.strip() for t in os.getenv("SLACK_NOTIFY_TARGET", "").split(",") if t.strip()]
+# Backward-compatible single-value aliases (used where a plain string is needed)
+EMAIL_TO            = ", ".join(EMAIL_RECIPIENTS)
+SLACK_NOTIFY_TARGET = ", ".join(SLACK_TARGETS)
 
 # ── Shared / fallback connection values ─────────────────────────────────────
 _CH_HOST      = os.getenv("clickhouse_host", "localhost")
@@ -352,15 +355,15 @@ def test_send_notification(helper, report, pdf_path):
         report=report,
         pdf_path=pdf_path,
         subject="[ClickHouse Test] Schema Comparison Report",
-        email_to=EMAIL_TO,
-        slack_target=SLACK_NOTIFY_TARGET or None,
+        email_to=EMAIL_RECIPIENTS or None,
+        slack_target=SLACK_TARGETS or None,
     )
     if results.get("email"):
-        print(f"  ✓ Email sent to {EMAIL_TO}")
+        print(f"  ✓ Email sent to {len(EMAIL_RECIPIENTS)} recipient(s): {EMAIL_TO}")
     elif NOTIFICATION_TYPE in ("email", "both"):
         print("  ⚠  Email delivery failed – check SMTP env vars")
     if results.get("slack"):
-        print(f"  ✓ Slack notification sent to {SLACK_NOTIFY_TARGET}")
+        print(f"  ✓ Slack notification sent to {len(SLACK_TARGETS)} target(s): {SLACK_NOTIFY_TARGET}")
     elif NOTIFICATION_TYPE in ("slack", "both"):
         print("  ⚠  Slack delivery failed – check SLACK_BOT_TOKEN / SLACK_NOTIFY_TARGET")
 
