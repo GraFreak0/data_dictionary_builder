@@ -11,7 +11,7 @@ from .notifications.slack_notifier import SlackNotifier
 from .DDHelper import DDHelper
 from .timer import ExecutionTimer
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 __all__ = [
     "MetadataExtractor",
     "DatabaseMetadata",

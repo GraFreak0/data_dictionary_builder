@@ -17,6 +17,12 @@ A Python library that automates database documentation — extract live schema m
 
 ---
 
+> **Fixed in v0.1.3**
+>
+> - **Email notifications delivery** — resolved three compounding issues that caused every email send to time out: (1) `smtp_port` was hardcoded as `587` in the function signature, preventing `SMTP_PORT=465` from being read from the environment; (2) no connect timeout was set on the SMTP socket, causing the OS default (~60 s) wait when the server was unreachable; (3) Gmail App Passwords supplied with spaces (as displayed in the Google account UI) were passed verbatim to `smtplib`, causing authentication failures. All three are now corrected — port is resolved from the environment, a 15 s socket timeout is enforced, and spaces are stripped from passwords automatically. Port 465 (implicit SSL) and port 587 (STARTTLS) are both supported and auto-detected.
+
+---
+
 ## Installation
 
 **pip**
