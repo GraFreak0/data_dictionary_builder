@@ -8,18 +8,20 @@ A Python library that automates database documentation — extract live schema m
 
 ---
 
+> **What's new in v0.1.4**
+>
+> - **Multi-recipient email delivery** — `email_to` now accepts a list of addresses (e.g. `["alice@example.com", "bob@example.com"]`) in addition to a single string. The `EMAIL_TO` environment variable supports comma-separated addresses (`EMAIL_TO=alice@example.com,bob@example.com`). All recipients receive the PDF attachment in one send.
+> - **Multi-target Slack delivery** — `slack_target` now accepts a list of targets (e.g. `["#data-alerts", "U012AB3CD"]`). The `SLACK_NOTIFY_TARGET` environment variable supports comma-separated values. Each target receives the full Block Kit report and optional PDF upload independently.
+> - **`send_notification` updated** — both `email_to` and `slack_target` parameters accept strings or lists; the method routes correctly for either form with no API change.
+
+---
+
 > **What's new in v0.1.3**
 >
 > - **Slack notifications** — deliver schema comparison reports directly to any Slack channel or DM alongside the existing email delivery. Use `notification_type="slack"` or `"both"` in `send_notification()`. Requires a Bot User OAuth Token (`xoxb-…`) and the `slack` extra: `pip install "data-dictionary-builder[slack]"`.
 > - **Optimised metadata generation** — parallel extraction is faster with improved thread scheduling and reduced connection overhead across all supported databases.
 > - **Smarter schema comparison** — type normalisation has been expanded to cover more cross-database equivalences, reducing false-positive mismatches in mixed-engine pipelines.
 > - **Leaner exports** — JSON metadata exports are more compact, and the `to_dict()` / `from_dict()` round-trip is validated automatically to ensure safe use in Airflow XCom and downstream catalog APIs.
-
----
-
-> **Fixed in v0.1.3**
->
-> - **Email notifications delivery** — resolved three compounding issues that caused every email send to time out: (1) `smtp_port` was hardcoded as `587` in the function signature, preventing `SMTP_PORT=465` from being read from the environment; (2) no connect timeout was set on the SMTP socket, causing the OS default (~60 s) wait when the server was unreachable; (3) Gmail App Passwords supplied with spaces (as displayed in the Google account UI) were passed verbatim to `smtplib`, causing authentication failures. All three are now corrected — port is resolved from the environment, a 15 s socket timeout is enforced, and spaces are stripped from passwords automatically. Port 465 (implicit SSL) and port 587 (STARTTLS) are both supported and auto-detected.
 
 ---
 
@@ -166,12 +168,13 @@ json_path = helper.save_report(report)
 pdf_path  = helper.compile_pdf(source_json=json_path)
 
 # Send via email, Slack, or both — credentials fall back to env vars
+# email_to and slack_target accept a string or a list of recipients
 helper.send_notification(
-    notification_type="email",   # "email" | "slack" | "both"
+    notification_type="both",    # "email" | "slack" | "both"
     report=report,
     pdf_path=pdf_path,
-    email_to="team@example.com",
-    slack_target="#data-alerts",
+    email_to=["alice@example.com", "bob@example.com"],
+    slack_target=["#data-alerts", "#data-eng"],
 )
 ```
 
@@ -229,13 +232,13 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=you@gmail.com
 SMTP_PASSWORD=xxxx xxxx xxxx xxxx
-EMAIL_TO=recipient@example.com
+EMAIL_TO=alice@example.com,bob@example.com   # comma-separated for multiple recipients
 
 # ── Slack — DDHelper.send_notification() ───────────────────────────────
 # Bot Token Scopes required: chat:write, files:write, channels:read,
 #                            users:read, im:write
 SLACK_BOT_TOKEN=xoxb-your-token-here
-SLACK_NOTIFY_TARGET=#data-alerts   # "#channel", "@user", "C…", or "U…"
+SLACK_NOTIFY_TARGET=#data-alerts,#data-eng   # comma-separated for multiple targets
 ```
 
 ---

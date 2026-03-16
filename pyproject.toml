@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "data-dictionary-builder"
-version = "0.1.3"
+version = "0.1.4"
 description = "Extract database metadata, generate dbt-compatible YAML, compare schemas, and deliver reports — all in a single Python import."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["database", "metadata", "dbt", "yaml", "data-engineering", "schema", "documentation"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Topic :: Database",
     "Topic :: Software Development :: Libraries :: Python Modules",

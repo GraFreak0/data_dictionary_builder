@@ -532,15 +532,14 @@ report["yaml_gaps"]["columns_without_descriptions"]
 If you've already extracted metadata earlier in your pipeline, pass it directly to avoid a second database round-trip:
 
 ```python
-# Extract once
-with MetadataExtractor(**dest_config) as ext:
-    dest_db_meta = ext.extract_all_schemas(schema_filter=TARGET_SCHEMAS)
+# Extract source once — reuse it for YAML generation and the comparison
+with MetadataExtractor(**source_config) as ext:
+    src_db_meta = ext.extract_all_schemas(schema_filter=TARGET_SCHEMAS)
 
-# Compare without re-querying the destination database
+# Destination is queried fresh inside the comparator; source snapshot is reused
 report = comparator.compare_and_generate_report(
     source_schema_name="public",
-    dest_db_metadata=dest_db_meta,
-    source_db_metadata=dest_db_meta,    # also reuse for YAML gap detection
+    source_db_metadata=src_db_meta,     # reuse SOURCE snapshot; DEST queried fresh
 )
 ```
 
@@ -612,10 +611,10 @@ results = helper.send_notification(
     report=report,
     pdf_path=pdf_path,
     subject="Nightly schema drift — prod",
-    # Email params (fall back to SMTP_* env vars)
-    email_to="data-team@company.com",
-    # Slack params (fall back to SLACK_BOT_TOKEN / SLACK_NOTIFY_TARGET env vars)
-    slack_target="#data-alerts",            # or "@username", "C…", "U…"
+    # email_to accepts a string or a list of addresses
+    email_to=["alice@company.com", "bob@company.com"],
+    # slack_target accepts a string or a list of targets
+    slack_target=["#data-alerts", "#data-eng"],   # "#channel", "@user", "C…", "U…"
 )
 # results → {"email": True, "slack": True}
 ```
@@ -629,9 +628,9 @@ results = helper.send_notification(
 | `SMTP_PORT` | email | SMTP port (default `587`) |
 | `SMTP_USER` | email | Sender address |
 | `SMTP_PASSWORD` | email | SMTP password / App Password |
-| `EMAIL_TO` | email | Recipient address |
+| `EMAIL_TO` | email | Recipient address(es) — comma-separated for multiple (e.g. `alice@example.com,bob@example.com`) |
 | `SLACK_BOT_TOKEN` | Slack | Bot User OAuth Token (`xoxb-…`) |
-| `SLACK_NOTIFY_TARGET` | Slack | `"#channel"`, `"@user"`, channel/user ID |
+| `SLACK_NOTIFY_TARGET` | Slack | Target(s) — comma-separated for multiple (e.g. `#data-alerts,#data-eng` or `U012AB3CD,C012AB3CD`) |
 
 Missing credentials are handled silently — the corresponding channel returns `False` without raising an exception.
 
@@ -670,8 +669,8 @@ results = helper.send_notification(
     report=report,
     pdf_path=pdf_path,          # uploaded as a file attachment
     subject="Schema drift report",
-    slack_target="#data-alerts",
-    slack_pipeline_label="prod → staging",   # optional header label
+    slack_target=["#data-alerts", "U012AB3CD"],   # list or single string
+    slack_pipeline_label="prod → staging",        # optional header label
 )
 ```
 
@@ -1015,7 +1014,7 @@ Key constructor parameters:
 | `dirs` | Dict with all four paths |
 | `save_report(report, dt=None)` | Write report to JSON; returns `Path` |
 | `compile_pdf(source_json=None, output_pdf=None)` | JSON → PDF; returns `Path` or `None` |
-| `send_notification(notification_type, report, pdf_path=None, subject=None, *, email_to, slack_target, slack_token, ...)` | Send via `"email"`, `"slack"`, or `"both"`; returns `{"email": bool, "slack": bool}` |
+| `send_notification(notification_type, report, pdf_path=None, subject=None, *, email_to, slack_target, slack_token, ...)` | Send via `"email"`, `"slack"`, or `"both"`; `email_to` and `slack_target` accept a string or a list; returns `{"email": bool, "slack": bool}` |
 | `send_report_email(report, pdf_path=None, subject=None, *, smtp_host, smtp_port, smtp_user, smtp_password, email_to, use_tls)` | Send email only; all SMTP params fall back to env vars |
 
 ---
