@@ -136,9 +136,9 @@ def test_connection():
 
 def test_schema_listing():
     section("2. Schema / Database Listing")
-    with MetadataExtractor(**DEST_CONFIG) as ext:
+    with MetadataExtractor(**SOURCE_CONFIG) as ext:
         schemas = ext.get_schemas_list()
-    print(f"  Destination schemas: {schemas}")
+    print(f"  Source schemas: {schemas}")
     assert isinstance(schemas, list)
     print(f"  ✓ Found {len(schemas)} schema(s)")
     return schemas
@@ -149,8 +149,8 @@ def test_schema_filter_strategies():
     Step 3 — applies every filter strategy against the live destination schema
     list and returns the full unfiltered list for use as TARGET_SCHEMAS.
     """
-    section("3. Schema-Filter Strategies  (destination DB)")
-    with MetadataExtractor(**DEST_CONFIG) as ext:
+    section("3. Schema-Filter Strategies  (source DB)")
+    with MetadataExtractor(**SOURCE_CONFIG) as ext:
         live = ext.get_schemas_list()
     print(f"  Live schemas: {live}\n")
     cases = [
@@ -164,7 +164,7 @@ def test_schema_filter_strategies():
         ("3h. None  (all)",            None),
     ]
     for label, sf in cases:
-        with MetadataExtractor(**DEST_CONFIG) as ext:
+        with MetadataExtractor(**SOURCE_CONFIG) as ext:
             matched = [s.name for s in ext.extract_all_schemas(schema_filter=sf).schemas]
         print(f"  ✓ {label}\n      filter: {sf}  →  {matched}\n")
     print("  ✓ Filter strategies OK")
@@ -174,26 +174,26 @@ def test_schema_filter_strategies():
 
 def test_extract_all_schemas():
     """
-    Step 4 — extracts full metadata from the DESTINATION using TARGET_SCHEMAS.
-    Returns dest_db_meta, which later steps reuse instead of re-querying the DB.
+    Step 4 — extracts full metadata from the SOURCE using TARGET_SCHEMAS.
+    Returns src_db_meta, which later steps reuse to generate YAML.
     """
-    section("4. Full Metadata Extraction  (destination DB → reused as snapshot)")
-    with MetadataExtractor(**DEST_CONFIG) as ext:
-        dest_db_meta = ext.extract_all_schemas(schema_filter=TARGET_SCHEMAS)
-    print(f"  Database : {dest_db_meta.database_name}  |  Version: {dest_db_meta.version}")
-    for schema in dest_db_meta.schemas:
+    section("4. Full Metadata Extraction  (source DB → snapshot)")
+    with MetadataExtractor(**SOURCE_CONFIG) as ext:
+        src_db_meta = ext.extract_all_schemas(schema_filter=TARGET_SCHEMAS)
+    print(f"  Database : {src_db_meta.database_name}  |  Version: {src_db_meta.version}")
+    for schema in src_db_meta.schemas:
         print(f"  [{schema.name}]  {len(schema.tables)} table(s)")
         for t in schema.tables[:5]:
             print(f"    • {t.name}  ({len(t.columns)} cols, {t.row_count} rows)")
         if len(schema.tables) > 5:
             print(f"    … and {len(schema.tables)-5} more")
     print("  ✓ Extraction OK")
-    return dest_db_meta
+    return src_db_meta
 
 
 def test_extract_single_schema():
     section("5. Extract Single Schema")
-    with MetadataExtractor(**DEST_CONFIG) as ext:
+    with MetadataExtractor(**SOURCE_CONFIG) as ext:
         schema = ext.extract_schema(TARGET_SCHEMAS[0])
     print(f"  Schema: {schema.name}  ({len(schema.tables)} tables)")
     print("  ✓ OK")
@@ -204,7 +204,7 @@ def test_extract_single_table(schema):
     section("6. Extract Single Table")
     if not schema.tables:
         print("  ⚠  No tables – skipping"); return
-    with MetadataExtractor(**DEST_CONFIG) as ext:
+    with MetadataExtractor(**SOURCE_CONFIG) as ext:
         table = ext.extract_table(TARGET_SCHEMAS[0], schema.tables[0].name)
     print(f"  {table.schema_name}.{table.name}  ({table.row_count} rows)")
     print(f"  PKs: {table.primary_keys}  |  Columns: {len(table.columns)}")
@@ -214,51 +214,50 @@ def test_extract_single_table(schema):
     print("  ✓ OK")
 
 
-def test_yaml_per_schema(dest_db_meta, dirs):
+def test_yaml_per_schema(src_db_meta, dirs):
     section("7. YAML Generation – Per-Schema  →  ./models/")
     gen   = YAMLGenerator(output_dir=str(dirs["models"]))
-    files = gen.generate_yaml_files(dest_db_meta)
+    files = gen.generate_yaml_files(src_db_meta)
     for f in files:
         print(f"  • {os.path.basename(f)}  ({os.path.getsize(f):,} bytes)")
     print("  ✓ Per-schema YAML OK")
 
 
-def test_yaml_combined(dest_db_meta, dirs):
+def test_yaml_combined(src_db_meta, dirs):
     section("8. YAML Generation – Combined  →  ./models/all_models.yml")
     filepath = YAMLGenerator(output_dir=str(dirs["models"])).generate_single_yaml(
-        dest_db_meta, filename="all_models.yml"
+        src_db_meta, filename="all_models.yml"
     )
     print(f"  {os.path.basename(filepath)}  ({os.path.getsize(filepath):,} bytes)")
     print("  ✓ Combined YAML OK")
 
 
-def test_documentation_gaps(dest_db_meta, dirs):
+def test_documentation_gaps(src_db_meta, dirs):
     section("9. Documentation Gap Detection")
     gen            = YAMLGenerator(output_dir=str(dirs["models"]))
-    tables_no_desc = gen.get_tables_without_descriptions(dest_db_meta)
-    cols_no_desc   = gen.get_columns_without_descriptions(dest_db_meta)
-    total_t = sum(len(s.tables) for s in dest_db_meta.schemas)
-    total_c = sum(len(t.columns) for s in dest_db_meta.schemas for t in s.tables)
+    tables_no_desc = gen.get_tables_without_descriptions(src_db_meta)
+    cols_no_desc   = gen.get_columns_without_descriptions(src_db_meta)
+    total_t = sum(len(s.tables) for s in src_db_meta.schemas)
+    total_c = sum(len(t.columns) for s in src_db_meta.schemas for t in s.tables)
     print(f"  Tables  : {100*(total_t-len(tables_no_desc))//max(total_t,1)}%  ({len(tables_no_desc)}/{total_t} missing)")
     print(f"  Columns : {100*(total_c-len(cols_no_desc))//max(total_c,1)}%  ({len(cols_no_desc)}/{total_c} missing)")
     print("  ✓ Gap detection OK")
 
 
-def test_schema_comparison(helper, dirs, dest_db_meta):
+def test_schema_comparison(helper, dirs, src_db_meta):
     """
     Step 10 — compares every schema in TARGET_SCHEMAS.
 
-    Source : fresh extraction from SOURCE_CONFIG each time.
-    Destination : reingested from dest_db_meta (extracted in step 4) —
-                  the destination DB is NOT queried again.
+    Source : reingested from src_db_meta (extracted in step 4).
+    Destination : queried fresh from DEST_CONFIG each time.
     """
-    section("10. Schema Comparison  (source fresh  vs  destination reingested)")
+    section("10. Schema Comparison  (source reingested  vs  destination fresh)")
     if not TARGET_SCHEMAS:
         print("  ⚠  TARGET_SCHEMAS is empty – skipping"); return None
 
     comparator = SchemaComparator(
         source_config=SOURCE_CONFIG,
-        destination_config=DEST_CONFIG,   # kept for reference; dest DB not queried
+        destination_config=DEST_CONFIG,
         yaml_output_dir=str(dirs["models"]),
     )
 
@@ -270,9 +269,9 @@ def test_schema_comparison(helper, dirs, dest_db_meta):
     all_col_gaps:        list = []
 
     for schema_name in TARGET_SCHEMAS:
-        dest_has_schema = any(s.name == schema_name for s in dest_db_meta.schemas)
-        if not dest_has_schema:
-            print(f"  ⚠  Schema '{schema_name}' absent in destination snapshot – skipping")
+        src_has_schema = any(s.name == schema_name for s in src_db_meta.schemas)
+        if not src_has_schema:
+            print(f"  ⚠  Schema '{schema_name}' absent in source snapshot – skipping")
             continue
 
         print(f"\n  Comparing schema: {schema_name}")
@@ -280,10 +279,7 @@ def test_schema_comparison(helper, dirs, dest_db_meta):
             source_schema_name=schema_name,
             destination_schema_name=schema_name,
             include_yaml_gaps=True,
-            # Reuse already-extracted dest_db_meta — no destination DB round-trip
-            dest_db_metadata=dest_db_meta,
-            # Reuse dest_db_meta for YAML gap analysis too — dest == source here
-            source_db_metadata=dest_db_meta,
+            source_db_metadata=src_db_meta,  # reuse SOURCE snapshot; DEST queried fresh
         )
         s = per_report["summary"]
         print(
@@ -368,11 +364,11 @@ def test_send_notification(helper, report, pdf_path):
         print("  ⚠  Slack delivery failed – check SLACK_BOT_TOKEN / SLACK_NOTIFY_TARGET")
 
 
-def test_metadata_export(helper, dest_db_meta):
+def test_metadata_export(helper, src_db_meta):
     section("13. Metadata Export to JSON  →  ./reports/json/")
     _meta_path = helper.reports_json_dir / "clickhouse_metadata.json"
     _meta_path.write_text(
-        _json_mod.dumps(dest_db_meta.to_dict(), indent=2, default=str),
+        _json_mod.dumps(src_db_meta.to_dict(), indent=2, default=str),
         encoding="utf-8",
     )
     print(f"  {_meta_path}  ({os.path.getsize(_meta_path):,} bytes)")
@@ -407,8 +403,8 @@ if __name__ == "__main__":
         TARGET_SCHEMAS = test_schema_filter_strategies()
         print(f"\n  → TARGET_SCHEMAS set to: {TARGET_SCHEMAS}")
 
-    with timer.task("4. Full metadata extraction (destination snapshot)"):
-        dest_db_meta = test_extract_all_schemas()
+    with timer.task("4. Full metadata extraction (source snapshot)"):
+        src_db_meta = test_extract_all_schemas()
 
     with timer.task("5. Extract single schema"):
         schema = test_extract_single_schema()
@@ -417,16 +413,16 @@ if __name__ == "__main__":
         test_extract_single_table(schema)
 
     with timer.task("7. YAML per-schema"):
-        test_yaml_per_schema(dest_db_meta, dirs)
+        test_yaml_per_schema(src_db_meta, dirs)
 
     with timer.task("8. YAML combined"):
-        test_yaml_combined(dest_db_meta, dirs)
+        test_yaml_combined(src_db_meta, dirs)
 
     with timer.task("9. Documentation gap detection"):
-        test_documentation_gaps(dest_db_meta, dirs)
+        test_documentation_gaps(src_db_meta, dirs)
 
-    with timer.task("10. Schema comparison (source fresh vs dest reingested)"):
-        report, json_path = test_schema_comparison(helper, dirs, dest_db_meta)
+    with timer.task("10. Schema comparison (source reingested vs dest fresh)"):
+        report, json_path = test_schema_comparison(helper, dirs, src_db_meta)
 
     with timer.task("11. Compile PDF"):
         pdf_path = test_compile_pdf(helper, json_path)
@@ -435,7 +431,7 @@ if __name__ == "__main__":
         test_send_notification(helper, report, pdf_path)
 
     with timer.task("13. Metadata export"):
-        test_metadata_export(helper, dest_db_meta)
+        test_metadata_export(helper, src_db_meta)
 
     timer.summary("ClickHouse Test Suite — Execution Summary")
 
