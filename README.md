@@ -6,6 +6,7 @@ A Python library that automates database documentation — extract live schema m
 [![Python](https://img.shields.io/pypi/pyversions/data-dictionary-builder)](https://pypi.org/project/data-dictionary-builder/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+![Logo](https://github.com/GraFreak0/data_dictionary_builder/blob/main/static/logo.png)
 ---
 
 > **What's new in v0.1.4**
