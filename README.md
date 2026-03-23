@@ -17,6 +17,12 @@ A Python library that automates database documentation — extract live schema m
 
 ---
 
+> **What's new in v0.1.5**
+>
+> - **MongoDB Support** — extract metadata from MongoDB collections. Fields and types are automatically inferred by sampling documents. Supports `_id` as primary key and standard auth mechanisms. Install with `pip install "data-dictionary-builder[mongodb]"`.
+
+---
+
 > **What's new in v0.1.3**
 >
 > - **Slack notifications** — deliver schema comparison reports directly to any Slack channel or DM alongside the existing email delivery. Use `notification_type="slack"` or `"both"` in `send_notification()`. Requires a Bot User OAuth Token (`xoxb-…`) and the `slack` extra: `pip install "data-dictionary-builder[slack]"`.
@@ -42,6 +48,7 @@ pip install "data-dictionary-builder[clickhouse-native]"  # ClickHouse native TC
 pip install "data-dictionary-builder[spanner]"
 pip install "data-dictionary-builder[oracle]"
 pip install "data-dictionary-builder[sqlserver]"
+pip install "data-dictionary-builder[mongodb]"
 
 # Everything at once
 pip install "data-dictionary-builder[all]"
@@ -65,6 +72,7 @@ uv add "data-dictionary-builder[clickhouse-native]"  # ClickHouse native TCP
 uv add "data-dictionary-builder[oracle]"
 uv add "data-dictionary-builder[sqlserver]"
 uv add "data-dictionary-builder[spanner]"
+uv add "data-dictionary-builder[mongodb]"
 
 # Everything at once
 uv add "data-dictionary-builder[all]"
@@ -77,6 +85,7 @@ ddgen install postgres
 ddgen install clickhouse
 ddgen install oracle
 ddgen install sqlserver
+ddgen install mongodb
 ddgen install all
 ```
 
@@ -93,6 +102,7 @@ ddgen install all
 | **Oracle Database** | `[oracle]` | `oracledb` (thin mode — no Oracle Client needed) |
 | **SQL Server / Azure SQL** | `[sqlserver]` | `pymssql` |
 | **Google Cloud Spanner** | `[spanner]` | `google-cloud-spanner` |
+| **MongoDB** | `[mongodb]` | `pymongo` |
 
 ---
 
@@ -214,7 +224,7 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 - **Email delivery** — SMTP with env-var credential fallback; PDF attached automatically
 - **Slack delivery** — Block Kit–formatted comparison summaries; optional PDF file upload; supports `#channel`, `@user`, channel IDs, and user IDs
 - **ExecutionTimer** — named task timing with a formatted summary table
-- **Server mode** — omit `database` to scan all databases on a MySQL, ClickHouse, or PostgreSQL server
+- **Server mode** — omit `database` to scan all databases on a MySQL, ClickHouse, PostgreSQL, or MongoDB server
 - **Rich CLI** — `ddgen extract`, `ddgen compare`, `ddgen features` (full API reference), `ddgen connectors`, `ddgen install`
 
 ---
