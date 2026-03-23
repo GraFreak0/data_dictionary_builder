@@ -16,6 +16,7 @@ __all__ = [
     "SQLiteConnector",
     "OracleConnector",
     "SQLServerConnector",
+    "MongoDBConnector",
     "get_connector",
 ]
 
@@ -28,6 +29,7 @@ _CONNECTOR_MAP = {
     "SQLiteConnector":      ("sqlite_connector",      None,                     None),
     "OracleConnector":      ("oracle_connector",      "oracledb",               "oracle"),
     "SQLServerConnector":   ("sqlserver_connector",   "pymssql",                "sqlserver"),
+    "MongoDBConnector":     ("mongodb_connector",     "pymongo",                "mongodb"),
 }
 
 
@@ -84,6 +86,7 @@ def get_connector(db_type: str, **kwargs) -> BaseConnector:
         "oracle":      ("OracleConnector",      "oracledb",             "oracle"),
         "sqlserver":   ("SQLServerConnector",   "pymssql",              "sqlserver"),
         "mssql":       ("SQLServerConnector",   "pymssql",              "sqlserver"),
+        "mongodb":     ("MongoDBConnector",     "pymongo",              "mongodb"),
     }
 
     if db_type_lower not in _routes:
