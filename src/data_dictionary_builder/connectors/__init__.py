@@ -24,7 +24,7 @@ __all__ = [
 _CONNECTOR_MAP = {
     "PostgresConnector":    ("postgres_connector",    "psycopg2-binary",        "postgres"),
     "MySQLConnector":       ("mysql_connector",       "PyMySQL",                "mysql"),
-    "ClickHouseConnector":  ("clickhouse_connector",  "clickhouse-driver",      "clickhouse"),
+    "ClickHouseConnector":  ("clickhouse_connector",  "clickhouse-connect",     "clickhouse"),
     "SpannerConnector":     ("spanner_connector",     "google-cloud-spanner",   "spanner"),
     "SQLiteConnector":      ("sqlite_connector",      None,                     None),
     "OracleConnector":      ("oracle_connector",      "oracledb",               "oracle"),
@@ -81,7 +81,7 @@ def get_connector(db_type: str, **kwargs) -> BaseConnector:
         "postgresql":  ("PostgresConnector",    "psycopg2-binary",      "postgres"),
         "mysql":       ("MySQLConnector",       "PyMySQL",              "mysql"),
         "mariadb":     ("MySQLConnector",       "PyMySQL",              "mysql"),
-        "clickhouse":  ("ClickHouseConnector",  "clickhouse-driver",    "clickhouse"),
+        "clickhouse":  ("ClickHouseConnector",  "clickhouse-connect",   "clickhouse"),
         "spanner":     ("SpannerConnector",     "google-cloud-spanner", "spanner"),
         "oracle":      ("OracleConnector",      "oracledb",             "oracle"),
         "sqlserver":   ("SQLServerConnector",   "pymssql",              "sqlserver"),
