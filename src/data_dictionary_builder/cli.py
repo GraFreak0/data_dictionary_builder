@@ -107,6 +107,15 @@ CONNECTORS = {
         "transport":   "gRPC",
         "default_port": None,
     },
+    "mongodb": {
+        "label":       "MongoDB",
+        "import_mod":  "pymongo",
+        "pip_package": "pymongo",
+        "pip_extra":   "mongodb",
+        "notes":       "NoSQL — infers schema by sampling documents; --database = database name",
+        "transport":   "TCP",
+        "default_port": 27017,
+    },
 }
 
 INSTALLABLE = [k for k, v in CONNECTORS.items() if v["pip_extra"] is not None]
@@ -127,7 +136,7 @@ def _db_options(prefix: str = ""):
         opts = [
             click.option(f"--{p}db-type",   f"--{p}type",  default="postgres",
                          show_default=True, metavar="TYPE",
-                         help="Database type: sqlite | postgres | mysql | clickhouse | oracle | sqlserver | spanner"),
+                         help="Database type: sqlite | postgres | mysql | clickhouse | oracle | sqlserver | spanner | mongodb"),
             click.option(f"--{p}host",       default="localhost",   show_default=True,
                          metavar="HOST",    help="Database server hostname or IP."),
             click.option(f"--{p}port",       default=None,  type=int,
@@ -146,6 +155,8 @@ def _db_options(prefix: str = ""):
                          help="Spanner only: GCP project ID."),
             click.option(f"--{p}instance-id",default=None, metavar="SPANNER_INSTANCE",
                          help="Spanner only: Cloud Spanner instance ID."),
+            click.option(f"--{p}connection-string", default=None, metavar="URI",
+                         help="MongoDB only: Full connection URI."),
         ]
         for opt in reversed(opts):
             fn = opt(fn)
@@ -164,6 +175,12 @@ def _build_config(prefix: str, kwargs: dict) -> dict:
         if val is not None and val != "" and val is not False:
             out_key = "clickhouse_transport" if field == "transport" else field
             cfg[out_key] = val
+    
+    # Handle connection_string explicitly as it doesn't fit the standard pattern easily
+    conn_str_key = f"{p}connection_string" if p else "connection_string"
+    if kwargs.get(conn_str_key):
+        cfg["connection_string"] = kwargs[conn_str_key]
+
     cfg.setdefault("db_type", "postgres")
     return cfg
 
@@ -183,6 +200,7 @@ MAIN_HELP = (
     "    oracle      Oracle Database (thin mode — no Instant Client needed)\n"
     "    sqlserver   SQL Server / Azure SQL Database  (alias: mssql)\n"
     "    spanner     Google Cloud Spanner (Application Default Credentials)\n"
+    "    mongodb     MongoDB (NoSQL — infers schema by sampling documents)\n"
     "\n\b\n"
     "  Quick start\n"
     "  ───────────\n"
@@ -233,7 +251,7 @@ def features():
   ───────────
     MetadataExtractor(db_type, **connection_params)
 
-    db_type             str    "sqlite" | "postgres" | "mysql" | "clickhouse" | "oracle" | "sqlserver" | "spanner"
+    db_type             str    "sqlite" | "postgres" | "mysql" | "clickhouse" | "oracle" | "sqlserver" | "spanner" | "mongodb"
     host                str    Server hostname or IP address
     port                int    Server port (auto-defaulted per db_type if omitted)
     database            str    Database name (omit for server-mode — scans all databases)
@@ -243,6 +261,7 @@ def features():
     secure              bool   Enable TLS — auto-adjusts port (8443 / 9440)
     project_id          str    Spanner: GCP project ID
     instance_id         str    Spanner: Cloud Spanner instance ID
+    connection_string   str    MongoDB: Full connection URI (overrides other params)
 
   Methods
   ───────
@@ -295,6 +314,7 @@ def features():
   ───────────
     Omit 'database' from connection params to scan every database on the server.
     Supported for MySQL, ClickHouse, and PostgreSQL.
+    MongoDB: all databases on the server are enumerated automatically.
     Oracle: all non-system schemas (users) are enumerated automatically.
     SQL Server: all non-system databases on the instance are enumerated.
 
@@ -638,6 +658,7 @@ def features():
     oracle         oracledb             1521           ddgen install oracle
     sqlserver      pymssql              1433           ddgen install sqlserver
     spanner        google-cloud-spanner —              ddgen install spanner
+    mongodb        pymongo              27017          ddgen install mongodb
 
     * With secure=True the port auto-adjusts: HTTP → 8443, native TCP → 9440.
     Oracle uses thin mode — no Oracle Instant Client installation required.
@@ -784,7 +805,7 @@ def features():
 @main.command("extract")
 @click.option("--db-type", "--type", "-t", default="postgres", show_default=True,
               type=click.Choice(
-                  ["sqlite", "postgres", "mysql", "clickhouse", "oracle", "sqlserver", "mssql", "spanner"],
+                  ["sqlite", "postgres", "mysql", "clickhouse", "oracle", "sqlserver", "mssql", "spanner", "mongodb"],
                   case_sensitive=False,
               ),
               help="Database type to connect to.")

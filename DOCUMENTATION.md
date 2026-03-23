@@ -35,6 +35,7 @@ pip install "data-dictionary-builder[clickhouse-native]"  # ClickHouse native TC
 pip install "data-dictionary-builder[oracle]"
 pip install "data-dictionary-builder[sqlserver]"
 pip install "data-dictionary-builder[spanner]"
+pip install "data-dictionary-builder[mongodb]"
 
 # Everything at once
 pip install "data-dictionary-builder[all]"
@@ -58,7 +59,8 @@ uv add data-dictionary-builder
 uv add "data-dictionary-builder[postgres]"
 uv add "data-dictionary-builder[clickhouse]"         # HTTP/HTTPS
 uv add "data-dictionary-builder[clickhouse-native]"  # native TCP
-uv add "data-dictionary-builder[all]"
+uv add "data-dictionary-builder[spanner]"
+uv add "data-dictionary-builder[mongodb]"
 
 # Install from source (editable)
 git clone https://github.com/GraFreak0/data_dictionary_builder.git
@@ -78,6 +80,7 @@ pip install clickhouse-driver        # ClickHouse native TCP transport (optional
 pip install oracledb                 # Oracle Database
 pip install pymssql                  # SQL Server / Azure SQL
 pip install google-cloud-spanner     # Google Cloud Spanner
+pip install pymongo                  # MongoDB
 pip install reportlab                # PDF report generation
 ```
 
@@ -294,9 +297,37 @@ with MetadataExtractor(
 
 Requires `google-cloud-spanner` and Application Default Credentials. Run `gcloud auth application-default login` or set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json`.
 
+### MongoDB
+
+Connect to MongoDB databases and collections. Since MongoDB is schemaless, the connector samples documents to infer field types.
+
+```python
+with MetadataExtractor(
+    db_type="mongodb",
+    host="localhost",
+    port=27017,
+    database="my_db",
+    user="admin",            # optional
+    password="secret",       # optional
+) as ext:
+    db_meta = ext.extract_all_schemas(schema_filter=["my_db"])
+```
+
+Or using a connection string:
+
+```python
+with MetadataExtractor(
+    db_type="mongodb",
+    connection_string="mongodb://user:pass@localhost:27017/my_db?authSource=admin"
+) as ext:
+    ...
+```
+
+Requires `pymongo`. Install with `pip install data-dictionary-builder[mongodb]` or `ddgen install mongodb`.
+
 ### Server Mode
 
-Omit `database` to scan **all databases on the server** at once. Supported for MySQL, ClickHouse, and PostgreSQL.
+Omit `database` to scan **all databases on the server** at once. Supported for MySQL, ClickHouse, PostgreSQL, and MongoDB.
 
 ```python
 with MetadataExtractor(db_type="mysql", host="db.internal",
