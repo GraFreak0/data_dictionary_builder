@@ -1035,7 +1035,28 @@ Key constructor parameters:
 
 ---
 
-### `DDHelper(base_dir=".")`
+### `DDHelper(base_dir=".", models_dir=None, reports_dir=None)`
+
+| Parameter | Type | Description |
+|---|---|---|
+| `base_dir` | `str` \| `Path` | Root directory (default `.`) |
+| `models_dir` | `str` \| `Path` | Explicit models path (default `base_dir/models`) |
+| `reports_dir` | `str` \| `Path` | Explicit reports path (default `base_dir/reports`) |
+
+#### Custom Layout Examples
+
+```python
+from data_dictionary_builder import DDHelper
+
+# Everything in one custom folder
+helper = DDHelper(base_dir="/data/metadata")
+
+# Split models and reports to separate locations
+helper = DDHelper(
+    models_dir="/app/dbt/models",
+    reports_dir="/tmp/ephemeral_reports"
+)
+```
 
 | Attribute / Method | Description |
 |---|---|

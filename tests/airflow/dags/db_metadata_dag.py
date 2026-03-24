@@ -208,6 +208,8 @@ def _safe_id(name: str) -> str:
 # Global output directories (shared across all pipelines)
 YAML_OUTPUT_DIR = _var("dd_yaml_output_dir", "/opt/airflow/models")
 REPORT_BASE_DIR = _var("dd_report_base_dir", "/opt/airflow/reports")
+MODELS_DIR      = _var("dd_models_dir",      None)
+REPORTS_DIR     = _var("dd_reports_dir",     None)
 DEFAULT_SUBJECT = _var("dd_email_subject",   "Database Schema Comparison Report")
 SCHEDULE        = _var("dd_schedule",        "0 2 * * *")
 
@@ -396,8 +398,9 @@ with DAG(
                 task_id="generate_yaml",
                 python_callable=run_generate_yaml_files,
                 op_kwargs={
-                    "yaml_output_dir":   YAML_OUTPUT_DIR,
                     "metadata_task_id":  f"pipeline__{safe_label}.extract_source",
+                    "yaml_output_dir":   YAML_OUTPUT_DIR,
+                    "models_dir":        MODELS_DIR,
                     "metadata_xcom_key": "source_metadata",
                 },
                 doc_md=f"""
@@ -444,6 +447,8 @@ with DAG(
                         "schema_name":              schema,
                         "yaml_output_dir":          YAML_OUTPUT_DIR,
                         "report_base_dir":          REPORT_BASE_DIR,
+                        "models_dir":               MODELS_DIR,
+                        "reports_dir":              REPORTS_DIR,
                         "source_config":            source_cfg,
                         "dest_config":              dest_cfg,
                         "include_yaml_gaps":        True,
@@ -476,8 +481,9 @@ with DAG(
                 task_id="compile_pdf",
                 python_callable=run_compile_pdf,
                 op_kwargs={
-                    "report_base_dir":    REPORT_BASE_DIR,
                     "report_task_id":     f"pipeline__{safe_label}.compare__{first_schema_safe}",
+                    "report_base_dir":    REPORT_BASE_DIR,
+                    "reports_dir":        REPORTS_DIR,
                     "report_xcom_key":    f"comparison__{first_schema_safe}",
                     "json_path_xcom_key": "report_json_path",
                     "pdf_xcom_key":       "pdf_path",
@@ -497,8 +503,9 @@ with DAG(
                 task_id="send_notification",
                 python_callable=run_send_notification,
                 op_kwargs={
-                    "report_base_dir":      REPORT_BASE_DIR,
                     "report_task_id":       f"pipeline__{safe_label}.compare__{first_schema_safe}",
+                    "report_base_dir":      REPORT_BASE_DIR,
+                    "reports_dir":          REPORTS_DIR,
                     "report_xcom_key":      f"comparison__{first_schema_safe}",
                     "pdf_task_id":          f"pipeline__{safe_label}.compile_pdf",
                     "pdf_xcom_key":         "pdf_path",
@@ -536,8 +543,9 @@ with DAG(
                 task_id="export_metadata",
                 python_callable=run_export_metadata,
                 op_kwargs={
-                    "report_base_dir":   REPORT_BASE_DIR,
                     "metadata_task_id":  f"pipeline__{safe_label}.extract_source",
+                    "report_base_dir":   REPORT_BASE_DIR,
+                    "reports_dir":       REPORTS_DIR,
                     "metadata_xcom_key": "source_metadata",
                     "export_filename":   f"{label}_source_metadata.json",
                     "xcom_key":          "metadata_export_path",
