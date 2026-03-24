@@ -978,7 +978,7 @@ def extract(db_type, host, port, database, user, password, service, schema_filte
 @main.command("compare")
 @click.option("--source-db-type",  default="postgres", show_default=True,
               type=click.Choice(
-                  ["sqlite","postgres","mysql","clickhouse","oracle","sqlserver","mssql","spanner"],
+                  ["sqlite","postgres","mysql","clickhouse","oracle","sqlserver","mssql","spanner", "mongodb"],
                   case_sensitive=False,
               ),
               help="Source database type.")
@@ -994,7 +994,7 @@ def extract(db_type, host, port, database, user, password, service, schema_filte
 @click.option("--source-secure",   is_flag=True, default=False)
 @click.option("--dest-db-type",    default="postgres", show_default=True,
               type=click.Choice(
-                  ["sqlite","postgres","mysql","clickhouse","oracle","sqlserver","mssql","spanner"],
+                  ["sqlite","postgres","mysql","clickhouse","oracle","sqlserver","mssql","spanner", "mongodb"],
                   case_sensitive=False,
               ),
               help="Destination database type.")
