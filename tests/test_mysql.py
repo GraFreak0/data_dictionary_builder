@@ -45,6 +45,7 @@ Slack:
 
 import json as _json_mod
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -369,7 +370,14 @@ def test_metadata_export(helper, src_db_meta):
 if __name__ == "__main__":
     print(f"\n{EMOJI*30}\n  data_dictionary_builder — MySQL full feature test\n{EMOJI*30}")
 
-    helper = DDHelper(".")
+    # Project root is the directory containing the 'tests' folder
+    PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+    
+    helper = DDHelper(
+        base_dir=PROJECT_ROOT,
+        models_dir=PROJECT_ROOT / "models",
+        reports_dir=PROJECT_ROOT / "temp"
+    )
     dirs   = helper.dirs
     timer  = ExecutionTimer()
 
