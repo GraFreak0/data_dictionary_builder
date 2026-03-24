@@ -142,7 +142,7 @@ config.yaml
 config.json
 secrets.yaml
 secrets.json
-dbt_models/
-dbt_models_a/
+
+
 models/
 reports/

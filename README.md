@@ -9,17 +9,18 @@ A Python library that automates database documentation — extract live schema m
 ![Logo](https://github.com/GraFreak0/data_dictionary_builder/blob/main/static/logo.png)
 ---
 
+> **What's new in v0.1.5**
+>
+> - **Custom output paths** — `DDHelper` now supports explicit `models_dir` and `reports_dir` parameters. You can store your models and reports in completely separate locations, or redirect them to a temporary folder during CI/CD.
+> - **MongoDB Support** — extract metadata from MongoDB collections. Fields and types are automatically inferred by sampling documents. Supports `_id` as primary key and standard auth mechanisms. Install with `pip install "data-dictionary-builder[mongodb]"`.
+
+---
+
 > **What's new in v0.1.4**
 >
 > - **Multi-recipient email delivery** — `email_to` now accepts a list of addresses (e.g. `["alice@example.com", "bob@example.com"]`) in addition to a single string. The `EMAIL_TO` environment variable supports comma-separated addresses (`EMAIL_TO=alice@example.com,bob@example.com`). All recipients receive the PDF attachment in one send.
 > - **Multi-target Slack delivery** — `slack_target` now accepts a list of targets (e.g. `["#data-alerts", "U012AB3CD"]`). The `SLACK_NOTIFY_TARGET` environment variable supports comma-separated values. Each target receives the full Block Kit report and optional PDF upload independently.
 > - **`send_notification` updated** — both `email_to` and `slack_target` parameters accept strings or lists; the method routes correctly for either form with no API change.
-
----
-
-> **What's new in v0.1.5**
->
-> - **MongoDB Support** — extract metadata from MongoDB collections. Fields and types are automatically inferred by sampling documents. Supports `_id` as primary key and standard auth mechanisms. Install with `pip install "data-dictionary-builder[mongodb]"`.
 
 ---
 
@@ -106,28 +107,58 @@ ddgen install all
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
+
+### 1. Installation
+
+```bash
+pip install data-dictionary-builder
+
+# Or with specific connectors
+pip install "data-dictionary-builder[postgres,mongodb]"
+```
+
+### 2. Basic Usage (Python)
 
 ```python
-from data_dictionary_builder import MetadataExtractor, YAMLGenerator, DDHelper, ExecutionTimer
+from data_dictionary_builder import DDHelper
 
-timer  = ExecutionTimer()
-helper = DDHelper(".")      # creates models/, reports/json/, reports/pdf/
+# Initialize with custom paths
+helper = DDHelper(
+    models_dir="my_dbt_project/models", 
+    reports_dir="logs/schema_reports"
+)
 
-with timer.task("Extract"):
-    with MetadataExtractor(
-        db_type="postgres", host="localhost", port=5432,
-        database="mydb", user="readonly", password="secret",
-    ) as ext:
-        db_meta = ext.extract_all_schemas(
-            schema_filter=["public", "analytics"],
-            parallel_workers=8,
-        )
+# Extract and generate YAML
+config = {
+    "db_type": "postgres",
+    "host": "localhost",
+    "database": "my_db",
+    "user": "admin",
+    "password": "password"
+}
+helper.generate_yaml(config, schema_filter=["public"])
+```
 
-with timer.task("Generate YAML"):
-    YAMLGenerator(output_dir=str(helper.models_dir)).generate_yaml_files(db_meta)
+### 3. MongoDB Support
 
-timer.summary()
+Extract metadata from MongoDB collections with automatic schema inference (via sampling):
+
+```python
+from data_dictionary_builder import DDHelper
+
+helper = DDHelper()
+
+mongo_config = {
+    "db_type": "mongodb",
+    "host": "localhost",
+    "port": 27017,
+    "database": "my_app_db"
+}
+
+# Extracts all collections in 'my_app_db'
+# Fields and types are inferred by sampling 100 docs per collection
+helper.generate_yaml(mongo_config)
 ```
 
 ---

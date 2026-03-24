@@ -19,8 +19,10 @@ Usage
 -----
     from data_dictionary_builder import DDHelper
 
-    helper = DDHelper()                    # base = current working directory
-    helper = DDHelper(base_dir="/data")    # custom root
+    helper = DDHelper()                              # base = current working directory
+    helper = DDHelper(base_dir="/data")              # custom root
+    helper = DDHelper(models_dir="/data/my_models",  # discrete absolute paths
+                      reports_dir="/data/my_reports")
 
     dirs = helper.dirs
     # dirs["models"]       → Path("<base>/models")
@@ -77,15 +79,29 @@ class DDHelper:
         Root directory under which ``models/``, ``reports/json/``, and
         ``reports/pdf/`` will be created.  Defaults to the current working
         directory.
+    models_dir : str | Path, optional
+        Explicit path for the models directory. If not provided,
+        defaults to ``base_dir / "models"``.
+    reports_dir : str | Path, optional
+        Explicit path for the reports directory. If not provided,
+        defaults to ``base_dir / "reports"``.
     """
 
     # ------------------------------------------------------------------ #
     # Construction                                                         #
     # ------------------------------------------------------------------ #
 
-    def __init__(self, base_dir: Union[str, Path] = ".") -> None:
+    def __init__(
+        self,
+        base_dir: Union[str, Path] = ".",
+        models_dir: Optional[Union[str, Path]] = None,
+        reports_dir: Optional[Union[str, Path]] = None,
+    ) -> None:
         self._base = Path(base_dir).resolve()
+        self._models_dir = Path(models_dir).resolve() if models_dir else self._base / "models"
+        self._reports_dir = Path(reports_dir).resolve() if reports_dir else self._base / "reports"
         self._dirs = self._create_dirs()
+
         logger.info(
             "DDHelper initialised — base: %s  |  dirs: %s",
             self._base,
@@ -135,10 +151,10 @@ class DDHelper:
 
     def _create_dirs(self) -> Dict[str, Path]:
         dirs = {
-            "models":       self._base / "models",
-            "reports":      self._base / "reports",
-            "reports_json": self._base / "reports" / "json",
-            "reports_pdf":  self._base / "reports" / "pdf",
+            "models":       self._models_dir,
+            "reports":      self._reports_dir,
+            "reports_json": self._reports_dir / "json",
+            "reports_pdf":  self._reports_dir / "pdf",
         }
         for path in dirs.values():
             path.mkdir(parents=True, exist_ok=True)
