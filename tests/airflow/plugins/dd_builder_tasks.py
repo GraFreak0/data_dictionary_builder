@@ -747,8 +747,9 @@ def run_extract_single_table(
 # ===========================================================================
 
 def run_generate_yaml_files(
-    yaml_output_dir:   str,
     metadata_task_id:  str,
+    yaml_output_dir:   Optional[str] = None,
+    models_dir:        Optional[str] = None,
     metadata_xcom_key: str = "source_metadata",
     **context,
 ) -> List[str]:
@@ -761,7 +762,8 @@ def run_generate_yaml_files(
 
     Parameters
     ----------
-    yaml_output_dir   : Directory where YAML files are written (e.g. ``models/``).
+    yaml_output_dir   : Directory where YAML files are written (legacy parameter).
+    models_dir        : Explicit models directory (overrides yaml_output_dir).
     metadata_task_id  : task_id of the upstream source extraction task.
     metadata_xcom_key : XCom key used by that task (default ``"source_metadata"``).
     """
@@ -774,7 +776,7 @@ def run_generate_yaml_files(
     log.info("Generating YAML for %d schema(s): %s", len(schema_names), schema_names)
 
     with timer.task("Generate per-schema YAML"):
-        gen   = YAMLGenerator(output_dir=yaml_output_dir)
+        gen   = YAMLGenerator(output_dir=models_dir or yaml_output_dir)
         files = gen.generate_yaml_files(db_meta)
 
     for f in files:
@@ -785,8 +787,9 @@ def run_generate_yaml_files(
 
 
 def run_generate_combined_yaml(
-    yaml_output_dir:   str,
     metadata_task_id:  str,
+    yaml_output_dir:   Optional[str] = None,
+    models_dir:        Optional[str] = None,
     metadata_xcom_key: str = "source_metadata",
     combined_filename: str = "all_models.yml",
     xcom_key:          str = "combined_yaml_path",
@@ -800,7 +803,8 @@ def run_generate_combined_yaml(
 
     Parameters
     ----------
-    yaml_output_dir   : Directory where the YAML file is written.
+    yaml_output_dir   : Directory where the YAML file is written (legacy).
+    models_dir        : Explicit models directory (overrides yaml_output_dir).
     metadata_task_id  : task_id of the upstream source extraction task.
     metadata_xcom_key : XCom key (default ``"source_metadata"``).
     combined_filename : Output filename (default ``"all_models.yml"``).
@@ -815,7 +819,7 @@ def run_generate_combined_yaml(
     log.info("Generating combined YAML for schemas: %s", schema_names)
 
     with timer.task("Generate combined YAML"):
-        filepath = YAMLGenerator(output_dir=yaml_output_dir).generate_single_yaml(
+        filepath = YAMLGenerator(output_dir=models_dir or yaml_output_dir).generate_single_yaml(
             db_meta, filename=combined_filename
         )
 
@@ -836,6 +840,7 @@ def run_generate_combined_yaml(
 def run_detect_documentation_gaps(
     metadata_task_id:  str,
     metadata_xcom_key: str = "source_metadata",
+    models_dir:        Optional[str] = None,
     xcom_key:          str = "doc_gaps",
     **context,
 ) -> Dict[str, Any]:
@@ -850,6 +855,7 @@ def run_detect_documentation_gaps(
     ----------
     metadata_task_id  : task_id of the upstream source extraction task.
     metadata_xcom_key : XCom key (default ``"source_metadata"``).
+    models_dir        : Optional models directory to check for existing YAML.
     xcom_key          : XCom key to push gap results under (default ``"doc_gaps"``).
 
     Returns
@@ -871,7 +877,7 @@ def run_detect_documentation_gaps(
     log.info("Checking documentation coverage for schemas: %s", schema_names)
 
     with timer.task("Documentation gap detection"):
-        gen             = YAMLGenerator(output_dir=".")
+        gen             = YAMLGenerator(output_dir=models_dir or ".")
         tables_no_desc  = gen.get_tables_without_descriptions(db_meta)
         columns_no_desc = gen.get_columns_without_descriptions(db_meta)
 
@@ -911,8 +917,10 @@ def run_detect_documentation_gaps(
 
 def run_compare_single_schema(
     schema_name:              str,
-    yaml_output_dir:          str,
-    report_base_dir:          str,
+    yaml_output_dir:          Optional[str] = None,
+    report_base_dir:          Optional[str] = None,
+    models_dir:               Optional[str] = None,
+    reports_dir:              Optional[str] = None,
     source_conn_id:           Optional[str] = None,
     dest_conn_id:             Optional[str] = None,
     source_config:            Optional[Dict[str, Any]] = None,
@@ -950,8 +958,10 @@ def run_compare_single_schema(
     Parameters
     ----------
     schema_name               : Schema to compare (must exist in source).
-    yaml_output_dir           : YAML output directory for documentation gap detection.
-    report_base_dir           : Base directory for DDHelper (JSON + PDF output).
+    yaml_output_dir           : YAML output directory (legacy).
+    report_base_dir           : Base directory for DDHelper (legacy).
+    models_dir                : Explicit models directory (overrides yaml_output_dir).
+    reports_dir               : Explicit reports directory (overrides report_base_dir).
     source_conn_id            : Airflow connection ID for the source database.
     dest_conn_id              : Airflow connection ID for the destination warehouse.
     source_config             : Pre-built source config dict.
@@ -999,7 +1009,7 @@ def run_compare_single_schema(
     comparator = SchemaComparator(
         source_config=src_cfg,
         destination_config=dest_cfg,
-        yaml_output_dir=yaml_output_dir,
+        yaml_output_dir=models_dir or yaml_output_dir,
     )
 
     with timer.task(f"Compare schema '{schema_name}'"):
@@ -1021,7 +1031,7 @@ def run_compare_single_schema(
     )
 
     # Save to JSON and push to XCom
-    helper    = DDHelper(report_base_dir)
+    helper    = DDHelper(base_dir=report_base_dir, reports_dir=reports_dir)
     json_path = helper.save_report(report)
     log.info("Report saved → %s", json_path)
 
@@ -1044,8 +1054,10 @@ def run_compare_single_schema(
 
 def run_compare_schemas(
     schema_names:              List[str],
-    yaml_output_dir:           str,
-    report_base_dir:           str,
+    yaml_output_dir:           Optional[str] = None,
+    report_base_dir:           Optional[str] = None,
+    models_dir:                Optional[str] = None,
+    reports_dir:               Optional[str] = None,
     source_conn_id:            Optional[str] = None,
     dest_conn_id:              Optional[str] = None,
     source_config:             Optional[Dict[str, Any]] = None,
@@ -1082,8 +1094,10 @@ def run_compare_schemas(
     Parameters
     ----------
     schema_names               : Schemas to compare (from source).
-    yaml_output_dir            : YAML directory for documentation gap detection.
-    report_base_dir            : Base dir for DDHelper (JSON + PDF output).
+    yaml_output_dir            : YAML directory (legacy).
+    report_base_dir            : Base dir for DDHelper (legacy).
+    models_dir                 : Explicit models directory (overrides yaml_output_dir).
+    reports_dir                : Explicit reports directory (overrides report_base_dir).
     source_conn_id             : Airflow connection ID for the source database.
     dest_conn_id               : Airflow connection ID for the destination warehouse.
     source_config / dest_config: Pre-built config dicts.
@@ -1188,7 +1202,7 @@ def run_compare_schemas(
             combined["schemas_compared"].append(schema_name)
 
     # ── Persist to JSON ───────────────────────────────────────────────────────
-    helper    = DDHelper(report_base_dir)
+    helper    = DDHelper(base_dir=report_base_dir, reports_dir=reports_dir)
     json_path = helper.save_report(combined)
 
     s = combined["summary"]
@@ -1218,8 +1232,9 @@ def run_compare_schemas(
 # ===========================================================================
 
 def run_compile_pdf(
-    report_base_dir:    str,
     report_task_id:     str,
+    report_base_dir:    Optional[str] = None,
+    reports_dir:        Optional[str] = None,
     report_xcom_key:    str = "comparison_report",
     json_path_xcom_key: str = "report_json_path",
     pdf_xcom_key:       str = "pdf_path",
@@ -1237,7 +1252,8 @@ def run_compile_pdf(
 
     Parameters
     ----------
-    report_base_dir    : Base directory used by DDHelper.
+    report_base_dir    : Base directory (legacy).
+    reports_dir        : Explicit reports directory (overrides report_base_dir).
     report_task_id     : task_id that pushed the comparison report to XCom.
     report_xcom_key    : XCom key for the report dict.
     json_path_xcom_key : XCom key for the JSON file path (avoids re-saving).
@@ -1255,7 +1271,7 @@ def run_compile_pdf(
         # Fallback: pull the report dict and save a fresh JSON file
         raw = ti.xcom_pull(task_ids=report_task_id, key=report_xcom_key) if ti else None
         if raw:
-            helper    = DDHelper(report_base_dir)
+            helper    = DDHelper(base_dir=report_base_dir, reports_dir=reports_dir)
             json_path = str(helper.save_report(raw))
         else:
             raise ValueError(
@@ -1264,7 +1280,7 @@ def run_compile_pdf(
             )
 
     with timer.task("Compile PDF"):
-        helper   = DDHelper(report_base_dir)
+        helper   = DDHelper(base_dir=report_base_dir, reports_dir=reports_dir)
         pdf_path = helper.compile_pdf(source_json=Path(json_path))
 
     if pdf_path:
@@ -1283,8 +1299,9 @@ def run_compile_pdf(
 # ===========================================================================
 
 def run_send_notification(
-    report_base_dir:      str,
     report_task_id:       str,
+    report_base_dir:      Optional[str] = None,
+    reports_dir:          Optional[str] = None,
     report_xcom_key:      str = "comparison_report",
     pdf_task_id:          Optional[str] = None,
     pdf_xcom_key:         str = "pdf_path",
@@ -1332,7 +1349,8 @@ def run_send_notification(
 
     Parameters
     ----------
-    report_base_dir      : Base directory for DDHelper.
+    report_base_dir      : Base directory (legacy).
+    reports_dir          : Explicit reports directory (overrides report_base_dir).
     report_task_id       : task_id that pushed the comparison report to XCom.
     report_xcom_key      : XCom key for the report dict.
     pdf_task_id          : task_id that pushed the PDF path to XCom (optional).
@@ -1383,7 +1401,7 @@ def run_send_notification(
     slack_target = slack_target or os.getenv("SLACK_NOTIFY_TARGET")
 
     with timer.task("Send notification"):
-        helper  = DDHelper(report_base_dir)
+        helper  = DDHelper(base_dir=report_base_dir, reports_dir=reports_dir)
         results = helper.send_notification(
             notification_type=nt,
             report=report,
@@ -1431,6 +1449,7 @@ def run_send_email(
     """Backward-compatible wrapper — calls ``run_send_notification`` with ``notification_type='email'``."""
     result = run_send_notification(
         report_base_dir=report_base_dir,
+        reports_dir=None,
         report_task_id=report_task_id,
         report_xcom_key=report_xcom_key,
         pdf_task_id=pdf_task_id,
@@ -1454,8 +1473,9 @@ def run_send_email(
 # ===========================================================================
 
 def run_export_metadata(
-    report_base_dir:   str,
     metadata_task_id:  str,
+    report_base_dir:   Optional[str] = None,
+    reports_dir:       Optional[str] = None,
     metadata_xcom_key: str = "source_metadata",
     export_filename:   Optional[str] = None,
     xcom_key:          str = "metadata_export_path",
@@ -1470,7 +1490,8 @@ def run_export_metadata(
 
     Parameters
     ----------
-    report_base_dir   : Base directory for DDHelper (JSON goes in reports/json/).
+    report_base_dir   : Base directory (legacy).
+    reports_dir       : Explicit reports directory (overrides report_base_dir).
     metadata_task_id  : task_id of the upstream source extraction task.
     metadata_xcom_key : XCom key (default ``"source_metadata"``).
     export_filename   : Custom output filename. Defaults to
@@ -1489,7 +1510,7 @@ def run_export_metadata(
     )
 
     with timer.task("Export metadata + round-trip validation"):
-        helper    = DDHelper(report_base_dir)
+        helper    = DDHelper(base_dir=report_base_dir, reports_dir=reports_dir)
         filename  = export_filename or f"{db_meta.database_name}_metadata.json"
         safe_name = filename.replace("/", "_").replace("\\", "_")
         out_path  = helper.reports_json_dir / safe_name
