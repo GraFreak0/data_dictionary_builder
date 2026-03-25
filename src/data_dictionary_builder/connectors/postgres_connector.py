@@ -417,7 +417,7 @@ class PostgresConnector(BaseConnector):
         # ── Query 5: approximate row counts via pg_class ─────────────────────
         cursor.execute(
             """
-            SELECT c.relname AS table_name, c.reltuples::bigint AS estimate
+            SELECT c.relname AS table_name, NULLIF(c.reltuples::bigint, -1) AS estimate
             FROM pg_class c
             JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE n.nspname = %s
@@ -499,7 +499,7 @@ class PostgresConnector(BaseConnector):
             cursor = self.connection.cursor()
             # Use pg_class for approximate count (faster)
             cursor.execute("""
-                SELECT reltuples::bigint AS estimate
+                SELECT NULLIF(reltuples::bigint, -1) AS estimate
                 FROM pg_class
                 WHERE oid = %s::regclass
             """, (f"{schema_name}.{table_name}",))
