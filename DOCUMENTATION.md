@@ -7,15 +7,17 @@
 3. [Connecting to Your Database](#3-connecting-to-your-database)
 4. [Extracting Metadata](#4-extracting-metadata)
 5. [Filtering Schemas](#5-filtering-schemas)
-6. [Parallel Extraction](#6-parallel-extraction)
-7. [Generating dbt YAML](#7-generating-dbt-yaml)
-8. [Comparing Schemas](#8-comparing-schemas)
-9. [Reports: JSON, PDF, and Notifications](#9-reports-json-pdf-and-notifications)
-10. [Timing Your Pipeline](#10-timing-your-pipeline)
-11. [Airflow Integration](#11-airflow-integration)
-12. [CLI Reference](#12-cli-reference)
-13. [API Reference](#13-api-reference)
-14. [Troubleshooting](#14-troubleshooting)
+6. [Excluding Tables and Columns](#6-excluding-tables-and-columns)
+7. [Extracting Views](#7-extracting-views)
+8. [Parallel Extraction](#8-parallel-extraction)
+9. [Generating dbt YAML](#9-generating-dbt-yaml)
+10. [Comparing Schemas](#10-comparing-schemas)
+11. [Reports: JSON, PDF, and Notifications](#11-reports-json-pdf-and-notifications)
+12. [Timing Your Pipeline](#12-timing-your-pipeline)
+13. [Airflow Integration](#13-airflow-integration)
+14. [CLI Reference](#14-cli-reference)
+15. [API Reference](#15-api-reference)
+16. [Troubleshooting](#16-troubleshooting)
 
 ---
 
@@ -427,7 +429,135 @@ Pass `schema_filter=None` (the default) to extract all schemas.
 
 ---
 
-## 6. Parallel Extraction
+## 6. Excluding Tables and Columns
+
+Use `table_exclude` and `column_exclude` to strip unwanted objects from the extraction before anything is written to YAML. Both parameters accept the same six pattern types as `schema_filter`.
+
+### Excluding Tables
+
+```python
+db_meta = ext.extract_all_schemas(
+    schema_filter=["contains:moniebook"],
+    table_exclude=[
+        "contains:peerdb",      # drop any table whose name contains "peerdb"
+        "contains:dbt",         # drop any table whose name contains "dbt"
+        "prefix:tmp_",          # drop tables starting with tmp_
+        "suffix:_old",          # drop tables ending with _old
+        "regex:^_.*$",          # drop tables whose names start with _
+    ],
+)
+```
+
+`table_exclude` is applied after extraction, so only the filtered tables are written to YAML. The database itself is unchanged.
+
+### Excluding Columns
+
+```python
+db_meta = ext.extract_all_schemas(
+    schema_filter=["public"],
+    column_exclude=[
+        "contains:peerdb",      # drop any column whose name contains "peerdb"
+        "prefix:_dlt_",         # drop columns starting with _dlt_
+        "suffix:_tmp",          # drop columns ending with _tmp
+        "peerdb_synced_at",     # exact name match (case-insensitive)
+    ],
+)
+```
+
+Column exclusions are applied per-table across all matched schemas.
+
+### Pattern Types (shared by schema_filter, table_exclude, and column_exclude)
+
+| Format | Example | Matches |
+|---|---|---|
+| Exact name | `"orders"` | Only `orders` (case-insensitive) |
+| Glob / wildcard | `"stg_%"` or `"stg_*"` | `stg_orders`, `stg_customers`, … |
+| `prefix:` | `"prefix:peerdb"` | Any name starting with `peerdb` |
+| `suffix:` | `"suffix:_tmp"` | Any name ending with `_tmp` |
+| `contains:` | `"contains:staging"` | Any name containing `staging` |
+| `regex:` | `"regex:^_.*$"` | Full Python `re.fullmatch` (case-insensitive) |
+
+Mix patterns freely in the same list:
+
+```python
+table_exclude=["prefix:tmp_", "contains:peerdb", "regex:^_.*$"]
+column_exclude=["contains:peerdb", "suffix:_at", "exact_column_name"]
+```
+
+### At the Single-Table Level
+
+`extract_schema()` and `extract_table()` also accept both parameters:
+
+```python
+# Single schema
+schema = ext.extract_schema(
+    "public",
+    table_exclude=["prefix:tmp_"],
+    column_exclude=["contains:peerdb"],
+)
+
+# Single table
+table = ext.extract_table(
+    "public", "orders",
+    column_exclude=["contains:peerdb"],
+)
+```
+
+---
+
+## 7. Extracting Views
+
+By default only base tables are extracted. Pass `include_views=True` to also include views in the output.
+
+```python
+db_meta = ext.extract_all_schemas(
+    schema_filter=["public"],
+    include_views=True,
+)
+```
+
+Views appear in the generated YAML with `table_type: VIEW` (or `table_type: VIEW (MaterializedView)` for ClickHouse materialized views):
+
+```yaml
+- name: active_orders_view
+  meta:
+    schema: public
+    table_type: VIEW
+    row_count: null
+  columns:
+    - name: order_id
+      data_type: integer
+```
+
+### Per-Connector Support
+
+| Database | View types included |
+|---|---|
+| PostgreSQL | `VIEW` |
+| MySQL / MariaDB | `VIEW` |
+| SQLite | `view` |
+| SQL Server / Azure SQL | `VIEW` |
+| Oracle | `ALL_VIEWS` (all views owned by the schema user) |
+| ClickHouse | `View` and `MaterializedView` engine types |
+| Google Cloud Spanner | *(not yet supported — returns base tables only)* |
+| MongoDB | *(not applicable)* |
+
+### Combining with Exclusions
+
+All three parameters compose freely:
+
+```python
+db_meta = ext.extract_all_schemas(
+    schema_filter=["contains:moniebook"],
+    table_exclude=["contains:peerdb", "contains:dbt"],
+    column_exclude=["contains:peerdb"],
+    include_views=True,
+)
+```
+
+---
+
+## 8. Parallel Extraction
 
 `extract_all_schemas()` uses a `ThreadPoolExecutor` internally. Each worker gets its own database connection, so threads never share state.
 
@@ -454,7 +584,7 @@ The ClickHouse and PostgreSQL connectors use bulk queries that cover the entire 
 
 ---
 
-## 7. Generating dbt YAML
+## 9. Generating dbt YAML
 
 ### Per-Schema Files (recommended)
 
@@ -518,7 +648,7 @@ print(f"Column documentation coverage: {coverage}%")
 
 ---
 
-## 8. Comparing Schemas
+## 10. Comparing Schemas
 
 Use `SchemaComparator` to detect drift between environments (e.g. production vs. staging).
 
@@ -596,7 +726,7 @@ results = comparator.extract_and_compare_all(
 
 ---
 
-## 9. Reports: JSON, PDF, and Notifications
+## 11. Reports: JSON, PDF, and Notifications
 
 `DDHelper` manages the standard output directory layout and handles all report delivery mechanisms: JSON persistence, PDF compilation, email, and Slack.
 
@@ -783,7 +913,7 @@ sender.send_comparison_report(
 
 ---
 
-## 10. Timing Your Pipeline
+## 12. Timing Your Pipeline
 
 Wrap any block of code in `timer.task()` to measure and report its duration:
 
@@ -837,7 +967,7 @@ task_timings, overall_seconds = timer.totals()
 
 ---
 
-## 11. Airflow Integration
+## 13. Airflow Integration
 
 `DatabaseMetadata` objects serialise to and from plain dicts via `to_dict()` / `from_dict()`, making them compatible with Airflow XCom out of the box.
 
@@ -902,7 +1032,7 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 
 ---
 
-## 12. CLI Reference
+## 14. CLI Reference
 
 The CLI entry points are `ddgen` and `data-dictionary-builder`.
 
@@ -948,18 +1078,36 @@ ddgen extract \
 
 Key flags:
 
-| Flag | Default | Description |
-|---|---|---|
-| `--db-type` | `postgres` | Database type |
-| `--host` | `localhost` | Server hostname |
-| `--port` | *(auto)* | Server port |
-| `--database` | — | Database name (omit for server mode) |
-| `--user` / `--password` | — | Credentials |
-| `--transport` | *(auto)* | ClickHouse only: `http` or `native` |
-| `--secure` | `false` | ClickHouse only: enable TLS |
-| `--output-dir` | `./models` | Where to write YAML files |
-| `--schema-filter` | *(all)* | One or more filter strings (space-separated) |
-| `--workers` | `5` | Parallel extraction threads |
+| Flag | Short | Default | Description |
+|---|---|---|---|
+| `--db-type` | | `postgres` | Database type |
+| `--host` | | `localhost` | Server hostname |
+| `--port` | | *(auto)* | Server port |
+| `--database` | | — | Database name (omit for server mode) |
+| `--user` / `--password` | | — | Credentials |
+| `--transport` | | *(auto)* | ClickHouse only: `http` or `native` |
+| `--secure` | | `false` | ClickHouse only: enable TLS |
+| `--output-dir` | `-o` | `./models` | Where to write YAML files |
+| `--schema-filter` | `-s` | *(all)* | Schema filter — repeat for multiple entries |
+| `--exclude-table` | `-T` | *(none)* | Table exclusion pattern — repeat for multiple entries |
+| `--exclude-column` | `-x` | *(none)* | Column exclusion pattern — repeat for multiple entries |
+| `--include-views` | | `false` | Also extract views alongside base tables |
+| `--parallel` | `-w` | `8` | Parallel extraction threads |
+
+Examples:
+
+```bash
+# Extract only moniebook schemas, dropping peerdb/dbt tables and peerdb columns
+ddgen extract --db-type clickhouse --host my.ch.cloud --secure \
+  -s "contains:moniebook" \
+  -T "contains:peerdb" -T "contains:dbt" \
+  -x "contains:peerdb"
+
+# Include views alongside base tables
+ddgen extract --db-type postgres --host prod.db.io --database mydb \
+  --include-views \
+  -s public -s analytics
+```
 
 ### `ddgen compare`
 
@@ -984,7 +1132,7 @@ ddgen features
 
 ---
 
-## 13. API Reference
+## 15. API Reference
 
 ### `MetadataExtractor(db_type, **connection_params)`
 
@@ -1007,9 +1155,19 @@ Key constructor parameters:
 | `test_connection()` | `bool` | Verify connectivity |
 | `get_schemas_list()` | `List[str]` | All schema names |
 | `get_tables_list(schema_name)` | `List[str]` | Table names in a schema |
-| `extract_table(schema, table)` | `TableMetadata` | Single table |
-| `extract_schema(schema_name)` | `SchemaMetadata` | Full schema |
-| `extract_all_schemas(schema_filter, parallel_workers)` | `DatabaseMetadata` | All filtered schemas in parallel |
+| `extract_table(schema, table, column_exclude=None)` | `TableMetadata` | Single table; columns matching `column_exclude` are stripped |
+| `extract_schema(schema_name, table_exclude=None, column_exclude=None, include_views=False)` | `SchemaMetadata` | Full schema with optional exclusions and view support |
+| `extract_all_schemas(schema_filter=None, parallel_workers=5, column_exclude=None, table_exclude=None, include_views=False)` | `DatabaseMetadata` | All filtered schemas in parallel; exclusions and view flag apply to all schemas |
+
+#### `extract_all_schemas` parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `schema_filter` | `list[str] \| None` | `None` | Which schemas to include — see [Section 5](#5-filtering-schemas) for pattern types |
+| `parallel_workers` | `int` | `5` | Max concurrent schema extractions |
+| `column_exclude` | `list[str] \| None` | `None` | Column exclusion patterns — see [Section 6](#6-excluding-tables-and-columns) |
+| `table_exclude` | `list[str] \| None` | `None` | Table exclusion patterns — see [Section 6](#6-excluding-tables-and-columns) |
+| `include_views` | `bool` | `False` | When `True`, views are extracted alongside base tables — see [Section 7](#7-extracting-views) |
 
 ---
 
@@ -1124,7 +1282,7 @@ helper = DDHelper(
 
 ---
 
-## 14. Troubleshooting
+## 16. Troubleshooting
 
 ### Connection Problems
 

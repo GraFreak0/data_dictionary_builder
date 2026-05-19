@@ -142,23 +142,50 @@ class BaseConnector(ABC):
         except Exception:
             return None
     
-    def extract_schema_metadata(self, schema_name: str) -> SchemaMetadata:
+    def get_views(self, schema_name: str) -> List[str]:
         """
-        Extract complete metadata for a schema.
-        
+        Get list of all views in a schema.
+
+        Override in subclasses to return real view names.  The default
+        implementation returns an empty list so connectors that have not
+        yet implemented view support degrade gracefully.
+
         Args:
             schema_name: Name of the schema
-            
+
+        Returns:
+            List of view names
+        """
+        return []
+
+    def extract_schema_metadata(
+        self,
+        schema_name: str,
+        include_views: bool = False,
+    ) -> SchemaMetadata:
+        """
+        Extract complete metadata for a schema.
+
+        Args:
+            schema_name: Name of the schema
+            include_views: When True, views are extracted in addition to
+                base tables.  Defaults to False.
+
         Returns:
             SchemaMetadata object
         """
         schema_metadata = SchemaMetadata(name=schema_name)
-        
-        tables = self.get_tables(schema_name)
-        for table_name in tables:
+
+        for table_name in self.get_tables(schema_name):
             table_metadata = self.get_table_metadata(schema_name, table_name)
             schema_metadata.add_table(table_metadata)
-        
+
+        if include_views:
+            for view_name in self.get_views(schema_name):
+                view_metadata = self.get_table_metadata(schema_name, view_name)
+                view_metadata.table_type = "VIEW"
+                schema_metadata.add_table(view_metadata)
+
         return schema_metadata
     
     def test_connection(self) -> bool:

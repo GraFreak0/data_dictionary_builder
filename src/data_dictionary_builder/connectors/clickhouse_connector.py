@@ -394,6 +394,17 @@ class ClickHouseConnector(BaseConnector):
         )
         return [row[0] for row in result.result_rows]
 
+    def get_views(self, schema_name: str) -> List[str]:
+        """Return all view and materialized-view names in *schema_name*."""
+        result = self.connection.query(
+            "SELECT name FROM system.tables "
+            "WHERE database = {db:String} "
+            "AND engine IN ('View', 'MaterializedView') "
+            "ORDER BY name",
+            parameters={"db": schema_name},
+        )
+        return [row[0] for row in result.result_rows]
+
     # ── Column / key metadata ─────────────────────────────────────────────────
 
     def get_columns(self, schema_name: str, table_name: str) -> List[ColumnMetadata]:
@@ -467,7 +478,11 @@ class ClickHouseConnector(BaseConnector):
 
     # ── Bulk schema extraction (2 queries for any N tables) ──────────────────
 
-    def extract_schema_metadata(self, schema_name: str) -> SchemaMetadata:
+    def extract_schema_metadata(
+        self,
+        schema_name: str,
+        include_views: bool = False,
+    ) -> SchemaMetadata:
         """
         Bulk-optimised schema extraction for ClickHouse.
 
@@ -476,19 +491,31 @@ class ClickHouseConnector(BaseConnector):
           2. ``system.columns`` — all columns for all tables at once
 
         For a schema with N tables this reduces round-trips from 3N → 2.
+
+        Args:
+            schema_name: ClickHouse database name to extract.
+            include_views: When True, View and MaterializedView objects are
+                included alongside base tables.
         """
-        # ── Query 1: all tables ───────────────────────────────────────────────
+        # ── Query 1: all tables (+ optionally views) ─────────────────────────
+        engine_filter = (
+            ""
+            if include_views
+            else "AND engine NOT IN ('View', 'MaterializedView') "
+        )
         tables_result = self.connection.query(
             "SELECT name, engine, comment, total_rows, primary_key "
             "FROM system.tables "
             "WHERE database = {db:String} "
-            "AND engine NOT IN ('View', 'MaterializedView') "
+            + engine_filter +
             "ORDER BY name",
             parameters={"db": schema_name},
         )
 
         if not tables_result.result_rows:
             return SchemaMetadata(name=schema_name)
+
+        VIEW_ENGINES = {"View", "MaterializedView"}
 
         tables_info: Dict[str, Dict[str, Any]] = {}
         for name, engine, comment, total_rows, pk_str in tables_result.result_rows:
@@ -497,12 +524,13 @@ class ClickHouseConnector(BaseConnector):
                 pk_list = [p.strip() for p in pk_str.strip("()").split(",") if p.strip()]
             tables_info[name] = {
                 "engine":       engine,
+                "is_view":      engine in VIEW_ENGINES,
                 "comment":      comment or None,
                 "total_rows":   total_rows,
                 "primary_keys": pk_list,
             }
 
-        # ── Query 2: all columns for all tables ───────────────────────────────
+        # ── Query 2: all columns for all tables/views ─────────────────────────
         # Table names come from system.tables (trusted source), so safe to inline.
         table_list = ", ".join(f"'{t}'" for t in tables_info.keys())
         columns_result = self.connection.query(
@@ -527,10 +555,14 @@ class ClickHouseConnector(BaseConnector):
 
         for table_name, tinfo in tables_info.items():
             pk_set = set(tinfo["primary_keys"])
+            if tinfo["is_view"]:
+                table_type = f'VIEW ({tinfo["engine"]})'
+            else:
+                table_type = f'BASE TABLE ({tinfo["engine"]})'
             table_meta = TableMetadata(
                 name=table_name,
                 schema_name=schema_name,
-                table_type=f'BASE TABLE ({tinfo["engine"]})',
+                table_type=table_type,
                 description=tinfo["comment"],
                 row_count=tinfo["total_rows"],
             )

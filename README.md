@@ -9,6 +9,15 @@ A Python library that automates database documentation — extract live schema m
 ![Logo](https://github.com/GraFreak0/data_dictionary_builder/blob/main/static/logo.png)
 ---
 
+> **What's new in v0.1.6**
+>
+> - **Column exclusion** — pass `column_exclude=["contains:peerdb", "prefix:_dlt_"]` to `extract_all_schemas()` / `extract_schema()` / `extract_table()` to strip matching columns before any YAML is written. Accepts the same six pattern types as `schema_filter`: exact, glob, `prefix:`, `suffix:`, `contains:`, `regex:`.
+> - **Table exclusion** — pass `table_exclude=["prefix:tmp_", "contains:staging"]` to drop entire tables from the extraction in the same way.
+> - **View extraction** — pass `include_views=True` to any extraction method to include database views alongside base tables. Views appear in the YAML with `table_type: VIEW`. Supported on all connectors (Postgres, MySQL, SQLite, SQL Server, Oracle, ClickHouse — covers both `View` and `MaterializedView` engines).
+> - **CLI additions** — `--exclude-column` / `-x`, `--exclude-table` / `-T`, and `--include-views` flags added to `ddgen extract`.
+
+---
+
 > **What's new in v0.1.5**
 >
 > - **Custom output paths** — `DDHelper` now supports explicit `models_dir` and `reports_dir` parameters. You can store your models and reports in completely separate locations, or redirect them to a temporary folder during CI/CD.
@@ -247,6 +256,9 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 - **Parallel extraction** — `ThreadPoolExecutor` with configurable workers; ClickHouse uses 2 queries and PostgreSQL uses 5 queries per schema regardless of table count
 - **Dual ClickHouse transport** — HTTP/HTTPS via `clickhouse-connect` (default) or native TCP via `clickhouse-driver`; auto-detected, with dynamic port defaults based on transport and TLS
 - **Schema filtering** — exact, glob, prefix, suffix, contains, regex — mix freely
+- **Column exclusion** — strip columns matching any pattern before writing YAML (`contains:peerdb`, `prefix:_dlt_`, etc.)
+- **Table exclusion** — drop entire tables matching any pattern from the extraction (`prefix:tmp_`, `contains:staging`, etc.)
+- **View extraction** — opt-in view support (`include_views=True`) across all connectors; ClickHouse includes both `View` and `MaterializedView` engine types
 - **Smart YAML merge** — re-running never overwrites descriptions you've written by hand
 - **YAML-aware gap detection** — documentation coverage checks read from your existing YAML files, so descriptions you've added are always recognised
 - **Cross-database comparison** — compare any two database types; type aliases normalised before diffing
