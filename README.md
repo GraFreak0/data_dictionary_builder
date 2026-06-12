@@ -9,6 +9,12 @@ A Python library that automates database documentation — extract live schema m
 ![Logo](https://github.com/GraFreak0/data_dictionary_builder/blob/main/static/logo.png)
 ---
 
+> **What's new in v0.1.9**
+>
+> - **Table `source` in meta** — every table's `meta` block now includes a `source` field showing which database engine the table was extracted from (e.g. `source: clickhouse`, `source: postgresql`, `source: spanner`). Useful when YAML files aggregate tables from multiple databases or when the file name alone doesn't make the origin obvious.
+
+---
+
 > **What's new in v0.1.8**
 >
 > - **Consistent description field ordering** — `description` now appears as the second key in every generated YAML block, immediately after `name`. For columns this means the order is `name → description → data_type → meta → tests` instead of the previous `name → data_type → description`. Table and schema-level ordering is unchanged (both already placed `description` right after `name`/`version`). This makes it faster to scan and fill in documentation because the description placeholder is always in the same predictable position.

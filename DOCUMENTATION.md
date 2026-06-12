@@ -547,12 +547,15 @@ Views appear in the generated YAML with `table_type: VIEW` (or `table_type: VIEW
 
 ```yaml
 - name: active_orders_view
+  description: null
   meta:
     schema: public
+    source: postgresql
     table_type: VIEW
     row_count: null
   columns:
     - name: order_id
+      description: null
       data_type: integer
 ```
 
@@ -635,12 +638,15 @@ filepath = gen.generate_single_yaml(db_meta, filename="all_models.yml")
 version: 2
 models:
   - name: orders
+    description: null
     meta:
       schema: public
+      source: postgresql
       table_type: BASE TABLE
       row_count: 4821903
     columns:
       - name: order_id
+        description: null
         data_type: integer
         meta:
           is_primary_key: true
@@ -691,6 +697,7 @@ models:
     description: null      # ← table description (immediately after name)
     meta:
       schema: public
+      source: postgresql
       table_type: BASE TABLE
       row_count: 4821903
     columns:
