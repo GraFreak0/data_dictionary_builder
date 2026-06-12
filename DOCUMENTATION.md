@@ -679,22 +679,24 @@ print(f"Column documentation coverage: {coverage}%")
 
 ### Always-present description fields
 
-Every schema, table, and column in the generated YAML now always includes a `description:` key. When the database has no description for an object, the field is written as `description: null` — a clear placeholder that tells users exactly where to fill in documentation.
+Every schema, table, and column in the generated YAML always includes a `description:` key. When the database has no description for an object, the field is written as `description: null` — a clear placeholder that tells users exactly where to fill in documentation.
+
+`description` always appears as the **second key** in each block, immediately after `name` (or after `version` at the schema level):
 
 ```yaml
 version: 2
-description: null          # ← schema description placeholder
+description: null          # ← schema description (immediately after version)
 models:
   - name: orders
-    description: null      # ← table description placeholder
+    description: null      # ← table description (immediately after name)
     meta:
       schema: public
       table_type: BASE TABLE
       row_count: 4821903
     columns:
       - name: order_id
+        description: null  # ← column description (immediately after name)
         data_type: integer
-        description: null  # ← column description placeholder
         meta:
           is_primary_key: true
           is_nullable: false
@@ -702,16 +704,16 @@ models:
           - unique
           - not_null
       - name: status
-        data_type: varchar
         description: null
+        data_type: varchar
 ```
 
 When a real description is available (either from a database COMMENT or a previously hand-written value in the YAML) it is used instead:
 
 ```yaml
       - name: status
-        data_type: varchar
         description: "Current state of the order: pending | shipped | delivered"
+        data_type: varchar
 ```
 
 ### Re-running against older YAML files

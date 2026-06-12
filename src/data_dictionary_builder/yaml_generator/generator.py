@@ -209,10 +209,10 @@ class YAMLGenerator:
         """
         col_dict = {
             'name': column.name,
-            'data_type': column.data_type,
-            # Always emit description so users know where to fill it in.
+            # Always emit description immediately after name so users know where to fill it in.
             # None → rendered as `description: null` in YAML (empty string normalised to None).
             'description': column.description or None,
+            'data_type': column.data_type,
         }
         
         # Add metadata

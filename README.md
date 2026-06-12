@@ -9,6 +9,12 @@ A Python library that automates database documentation — extract live schema m
 ![Logo](https://github.com/GraFreak0/data_dictionary_builder/blob/main/static/logo.png)
 ---
 
+> **What's new in v0.1.8**
+>
+> - **Consistent description field ordering** — `description` now appears as the second key in every generated YAML block, immediately after `name`. For columns this means the order is `name → description → data_type → meta → tests` instead of the previous `name → data_type → description`. Table and schema-level ordering is unchanged (both already placed `description` right after `name`/`version`). This makes it faster to scan and fill in documentation because the description placeholder is always in the same predictable position.
+
+---
+
 > **What's new in v0.1.7**
 >
 > - **Always-present description fields** — every schema, table, and column in generated YAML now always includes a `description:` key. When no description is available from the database the field is emitted as `description: null`, giving users a clear placeholder to fill in. Existing user-written descriptions are never overwritten. Re-running against older YAML files automatically backfills any missing `description` keys.
