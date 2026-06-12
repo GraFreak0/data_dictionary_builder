@@ -9,6 +9,14 @@ A Python library that automates database documentation — extract live schema m
 ![Logo](https://github.com/GraFreak0/data_dictionary_builder/blob/main/static/logo.png)
 ---
 
+> **What's new in v0.1.7**
+>
+> - **Always-present description fields** — every schema, table, and column in generated YAML now always includes a `description:` key. When no description is available from the database the field is emitted as `description: null`, giving users a clear placeholder to fill in. Existing user-written descriptions are never overwritten. Re-running against older YAML files automatically backfills any missing `description` keys.
+> - **Improved gap detection** — `get_tables_without_descriptions()` and `get_columns_without_descriptions()` now explicitly treat `description: null` and `description: ""` (empty string) in YAML as undocumented, matching the expectation that a placeholder null field still needs to be filled in.
+> - **Spanner multi-database extraction** — `database_id` is now optional for the Spanner connector. Pass a `databases` list to extract multiple databases in one call, or omit both to auto-discover every database in the instance. Each database is surfaced as a separate schema in the output. Single-database behaviour (`database_id` set) is unchanged.
+
+---
+
 > **What's new in v0.1.6**
 >
 > - **Column exclusion** — pass `column_exclude=["contains:peerdb", "prefix:_dlt_"]` to `extract_all_schemas()` / `extract_schema()` / `extract_table()` to strip matching columns before any YAML is written. Accepts the same six pattern types as `schema_filter`: exact, glob, `prefix:`, `suffix:`, `contains:`, `regex:`.

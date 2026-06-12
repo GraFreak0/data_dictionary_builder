@@ -5,7 +5,7 @@ YAML generator for creating dbt-compatible YAML files from database metadata.
 import os
 import yaml
 import logging
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, List, Optional
 from ..metadata.models import DatabaseMetadata, SchemaMetadata, TableMetadata, ColumnMetadata
 
 # Configure logging
@@ -114,7 +114,11 @@ class YAMLGenerator:
         
         # Start with existing model
         merged = existing_model.copy()
-        
+
+        # Backfill description key for entries that predate v0.1.6
+        if 'description' not in merged:
+            merged['description'] = new_model.get('description')
+
         # Update meta if new model has it
         if 'meta' in new_model:
             if 'meta' not in merged:
@@ -163,7 +167,11 @@ class YAMLGenerator:
                 # Keep existing column (preserves descriptions and custom tests)
                 existing_col = existing_map[col_name]
                 merged_col = existing_col.copy()
-                
+
+                # Backfill description key for columns that predate v0.1.6
+                if 'description' not in merged_col:
+                    merged_col['description'] = new_col.get('description')
+
                 # Update data_type if changed
                 if new_col.get('data_type') != existing_col.get('data_type'):
                     logger.info(f"    ! Type changed for {col_name}: {existing_col.get('data_type')} -> {new_col.get('data_type')}")
@@ -192,21 +200,20 @@ class YAMLGenerator:
     def _column_to_yaml_dict(self, column: ColumnMetadata) -> Dict[str, Any]:
         """
         Convert column metadata to YAML-compatible dictionary.
-        
+
         Args:
             column: ColumnMetadata object
-            
+
         Returns:
             Dictionary representation for YAML
         """
         col_dict = {
             'name': column.name,
             'data_type': column.data_type,
+            # Always emit description so users know where to fill it in.
+            # None → rendered as `description: null` in YAML (empty string normalised to None).
+            'description': column.description or None,
         }
-        
-        # Add description if available
-        if column.description:
-            col_dict['description'] = column.description
         
         # Add metadata
         meta = {}
@@ -238,20 +245,18 @@ class YAMLGenerator:
     def _table_to_yaml_dict(self, table: TableMetadata) -> Dict[str, Any]:
         """
         Convert table metadata to YAML-compatible dictionary.
-        
+
         Args:
             table: TableMetadata object
-            
+
         Returns:
             Dictionary representation for YAML
         """
         table_dict = {
             'name': table.name,
+            # Always emit description (None → `description: null`) so users know where to fill it in.
+            'description': table.description or None,
         }
-        
-        # Add description if available
-        if table.description:
-            table_dict['description'] = table.description
         
         # Add metadata
         meta = {
@@ -273,16 +278,18 @@ class YAMLGenerator:
     def _schema_to_yaml_dict(self, schema: SchemaMetadata) -> Dict[str, Any]:
         """
         Convert schema metadata to YAML-compatible dictionary.
-        
+
         Args:
             schema: SchemaMetadata object
-            
+
         Returns:
             Dictionary representation for YAML
         """
         schema_dict = {
             'version': 2,
-            'models': []
+            # Always emit schema description so users know where to fill it in.
+            'description': schema.description or None,
+            'models': [],
         }
         
         # Add each table as a model
@@ -319,10 +326,13 @@ class YAMLGenerator:
         
         if existing_yaml:
             logger.info(f"Merging with existing file: {filepath}")
+            # Preserve user-written schema description; only replace if user had none
+            existing_desc = existing_yaml.get('description')
+            if existing_desc:
+                yaml_dict['description'] = existing_desc
             # Merge models
             existing_models = existing_yaml.get('models', [])
             new_models = yaml_dict.get('models', [])
-            
             merged_models = self._merge_models(existing_models, new_models)
             yaml_dict['models'] = merged_models
         else:
@@ -343,8 +353,10 @@ class YAMLGenerator:
             yaml_dict: Dictionary to write as YAML
         """
         with open(filepath, 'w', encoding='utf-8') as f:
-            # Write version
             f.write(f"version: {yaml_dict.get('version', 2)}\n")
+            # Always write schema description (null when not set)
+            desc = yaml_dict.get('description')
+            f.write(f"description: {desc}\n" if desc else "description: null\n")
             f.write("models:\n")
             
             # Write each model with empty line after
@@ -430,11 +442,26 @@ class YAMLGenerator:
         logger.info(f"Generated combined YAML file: {filepath}")
         return filepath
     
+    @staticmethod
+    def _is_documented(yaml_value: Any, model_value: Optional[str]) -> bool:
+        """
+        Return True only when a non-null, non-empty description is present.
+
+        Checks the value loaded from the YAML file first (user-written
+        descriptions live there), then falls back to the in-memory value
+        extracted from the database.
+
+        A YAML field of ``description: null`` or ``description: ""`` is
+        treated the same as a missing key — both are "not documented".
+        """
+        return bool(yaml_value) or bool(model_value)
+
     def _load_yaml_descriptions(self, schema_name: str) -> Dict[str, Any]:
         """
         Load descriptions from the existing YAML file for a schema.
 
-        Returns a dict structured as:
+        Returns a dict structured as::
+
             {
                 table_name: {
                     "description": str | None,
@@ -442,6 +469,9 @@ class YAMLGenerator:
                 },
                 ...
             }
+
+        A ``description: null`` or ``description: ""`` entry in the YAML is
+        stored as ``None`` so callers can use ``bool()`` to test presence.
         """
         safe_name = schema_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
         filepath = os.path.join(self.output_dir, f"{safe_name}.yml")
@@ -454,14 +484,18 @@ class YAMLGenerator:
             name = model.get('name')
             if not name:
                 continue
+            # Normalise null / empty-string to None so bool() works correctly
+            raw_table_desc = model.get('description')
             result[name] = {
-                'description': model.get('description') or '',
-                'columns': {
-                    col['name']: col.get('description') or ''
-                    for col in model.get('columns', [])
-                    if col.get('name')
-                },
+                'description': raw_table_desc if raw_table_desc else None,
+                'columns': {},
             }
+            for col in model.get('columns', []):
+                col_name = col.get('name')
+                if not col_name:
+                    continue
+                raw_col_desc = col.get('description')
+                result[name]['columns'][col_name] = raw_col_desc if raw_col_desc else None
         return result
 
     def get_tables_without_descriptions(self, db_metadata: DatabaseMetadata) -> List[str]:
@@ -472,23 +506,23 @@ class YAMLGenerator:
         user-written descriptions live), falling back to the in-memory
         metadata description field.
 
+        A table is considered undocumented when its YAML ``description`` key is
+        absent, ``null``, or an empty string AND the in-memory description from
+        the database is also absent or empty.
+
         Args:
             db_metadata: DatabaseMetadata object
 
         Returns:
-            List of table names without descriptions
+            List of ``"schema.table"`` strings for undocumented tables
         """
         tables_without_desc = []
 
         for schema in db_metadata.schemas:
             yaml_descs = self._load_yaml_descriptions(schema.name)
             for table in schema.tables:
-                yaml_table = yaml_descs.get(table.name, {})
-                has_desc = bool(
-                    yaml_table.get('description')
-                    or table.description
-                )
-                if not has_desc:
+                yaml_desc = yaml_descs.get(table.name, {}).get('description')
+                if not self._is_documented(yaml_desc, table.description):
                     tables_without_desc.append(f"{schema.name}.{table.name}")
 
         return tables_without_desc
@@ -501,11 +535,15 @@ class YAMLGenerator:
         user-written descriptions live), falling back to the in-memory
         metadata description field.
 
+        A column is considered undocumented when its YAML ``description`` key
+        is absent, ``null``, or an empty string AND the in-memory description
+        from the database is also absent or empty.
+
         Args:
             db_metadata: DatabaseMetadata object
 
         Returns:
-            List of dictionaries with table and column information
+            List of ``{"schema", "table", "column"}`` dicts for undocumented columns
         """
         columns_without_desc = []
 
@@ -514,11 +552,8 @@ class YAMLGenerator:
             for table in schema.tables:
                 yaml_cols = yaml_descs.get(table.name, {}).get('columns', {})
                 for column in table.columns:
-                    has_desc = bool(
-                        yaml_cols.get(column.name)
-                        or column.description
-                    )
-                    if not has_desc:
+                    yaml_desc = yaml_cols.get(column.name)
+                    if not self._is_documented(yaml_desc, column.description):
                         columns_without_desc.append({
                             'schema': schema.name,
                             'table': table.name,

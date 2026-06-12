@@ -11,13 +11,14 @@
 7. [Extracting Views](#7-extracting-views)
 8. [Parallel Extraction](#8-parallel-extraction)
 9. [Generating dbt YAML](#9-generating-dbt-yaml)
-10. [Comparing Schemas](#10-comparing-schemas)
-11. [Reports: JSON, PDF, and Notifications](#11-reports-json-pdf-and-notifications)
-12. [Timing Your Pipeline](#12-timing-your-pipeline)
-13. [Airflow Integration](#13-airflow-integration)
-14. [CLI Reference](#14-cli-reference)
-15. [API Reference](#15-api-reference)
-16. [Troubleshooting](#16-troubleshooting)
+10. [Description Fields and Documentation Coverage](#10-description-fields-and-documentation-coverage)
+11. [Comparing Schemas](#11-comparing-schemas)
+12. [Reports: JSON, PDF, and Notifications](#12-reports-json-pdf-and-notifications)
+13. [Timing Your Pipeline](#13-timing-your-pipeline)
+14. [Airflow Integration](#14-airflow-integration)
+15. [CLI Reference](#15-cli-reference)
+16. [API Reference](#16-api-reference)
+17. [Troubleshooting](#17-troubleshooting)
 
 ---
 
@@ -287,17 +288,43 @@ Table and column descriptions are read from `sys.extended_properties` (`MS_Descr
 
 ### Google Cloud Spanner
 
+Requires `google-cloud-spanner` and Application Default Credentials. Run `gcloud auth application-default login` or set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json`.
+
+**Single-database mode** — extract one database (original behaviour, unchanged):
+
 ```python
 with MetadataExtractor(
     db_type="spanner",
     instance_id="my-instance",
-    database_id="my-database",
-    project_id="my-gcp-project",   # optional if ADC is configured
+    database_id="my-database",       # targets exactly one database
+    project_id="my-gcp-project",     # optional if ADC is configured
 ) as ext:
-    ...
+    db_meta = ext.extract_all_schemas()
 ```
 
-Requires `google-cloud-spanner` and Application Default Credentials. Run `gcloud auth application-default login` or set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json`.
+**Multi-database mode — explicit list** — pass a `databases` list to extract several databases in one call. Each database is surfaced as a separate schema in the output:
+
+```python
+with MetadataExtractor(
+    db_type="spanner",
+    instance_id="my-instance",
+    databases=["payments", "orders", "inventory"],
+    project_id="my-gcp-project",
+) as ext:
+    db_meta = ext.extract_all_schemas()
+```
+
+**Multi-database mode — auto-discover** — omit both `database_id` and `databases` to automatically enumerate every database in the instance:
+
+```python
+with MetadataExtractor(
+    db_type="spanner",
+    instance_id="my-instance",
+    project_id="my-gcp-project",
+) as ext:
+    db_meta = ext.extract_all_schemas()
+    # Each discovered database appears as a schema in db_meta
+```
 
 ### MongoDB
 
@@ -648,7 +675,79 @@ print(f"Column documentation coverage: {coverage}%")
 
 ---
 
-## 10. Comparing Schemas
+## 10. Description Fields and Documentation Coverage
+
+### Always-present description fields
+
+Every schema, table, and column in the generated YAML now always includes a `description:` key. When the database has no description for an object, the field is written as `description: null` — a clear placeholder that tells users exactly where to fill in documentation.
+
+```yaml
+version: 2
+description: null          # ← schema description placeholder
+models:
+  - name: orders
+    description: null      # ← table description placeholder
+    meta:
+      schema: public
+      table_type: BASE TABLE
+      row_count: 4821903
+    columns:
+      - name: order_id
+        data_type: integer
+        description: null  # ← column description placeholder
+        meta:
+          is_primary_key: true
+          is_nullable: false
+        tests:
+          - unique
+          - not_null
+      - name: status
+        data_type: varchar
+        description: null
+```
+
+When a real description is available (either from a database COMMENT or a previously hand-written value in the YAML) it is used instead:
+
+```yaml
+      - name: status
+        data_type: varchar
+        description: "Current state of the order: pending | shipped | delivered"
+```
+
+### Re-running against older YAML files
+
+On each run the smart merge automatically backfills any `description` key that is missing from an existing column or table entry, so older YAML files are brought up to the new format without any manual edits.
+
+### Gap detection — how null descriptions are handled
+
+`get_tables_without_descriptions()` and `get_columns_without_descriptions()` flag an object as **undocumented** whenever:
+
+| YAML value | In-memory value | Result |
+|---|---|---|
+| key absent | `None` | ❌ undocumented |
+| `description: null` | `None` | ❌ undocumented |
+| `description: ""` | `None` | ❌ undocumented |
+| `description: null` | `"from DB comment"` | ✅ documented |
+| `description: "user text"` | anything | ✅ documented |
+
+A `description: null` placeholder is therefore correctly treated as "not yet documented" and will always appear in the gap report until a user fills it in.
+
+```python
+gen = YAMLGenerator(output_dir="./models")
+gen.generate_yaml_files(db_meta)      # writes description: null for new items
+
+tables_missing  = gen.get_tables_without_descriptions(db_meta)
+columns_missing = gen.get_columns_without_descriptions(db_meta)
+
+total_cols = sum(len(t.columns) for s in db_meta.schemas for t in s.tables)
+coverage   = 100 * (total_cols - len(columns_missing)) // max(total_cols, 1)
+print(f"Column documentation coverage: {coverage}%")
+# → "Column documentation coverage: 0%"  (before any descriptions are written)
+```
+
+---
+
+## 11. Comparing Schemas
 
 Use `SchemaComparator` to detect drift between environments (e.g. production vs. staging).
 
@@ -726,7 +825,7 @@ results = comparator.extract_and_compare_all(
 
 ---
 
-## 11. Reports: JSON, PDF, and Notifications
+## 12. Reports: JSON, PDF, and Notifications
 
 `DDHelper` manages the standard output directory layout and handles all report delivery mechanisms: JSON persistence, PDF compilation, email, and Slack.
 
@@ -913,7 +1012,7 @@ sender.send_comparison_report(
 
 ---
 
-## 12. Timing Your Pipeline
+## 13. Timing Your Pipeline
 
 Wrap any block of code in `timer.task()` to measure and report its duration:
 
@@ -967,7 +1066,7 @@ task_timings, overall_seconds = timer.totals()
 
 ---
 
-## 13. Airflow Integration
+## 14. Airflow Integration
 
 `DatabaseMetadata` objects serialise to and from plain dicts via `to_dict()` / `from_dict()`, making them compatible with Airflow XCom out of the box.
 
@@ -1032,7 +1131,7 @@ See [`tests/airflow_dag_example.py`](tests/airflow_dag_example.py) for a complet
 
 ---
 
-## 14. CLI Reference
+## 15. CLI Reference
 
 The CLI entry points are `ddgen` and `data-dictionary-builder`.
 
@@ -1132,7 +1231,7 @@ ddgen features
 
 ---
 
-## 15. API Reference
+## 16. API Reference
 
 ### `MetadataExtractor(db_type, **connection_params)`
 
@@ -1149,6 +1248,8 @@ Key constructor parameters:
 | `secure` | `bool` | ClickHouse only: enable TLS (auto-adjusts port to 8443/9440) |
 | `project_id` | `str` | Spanner only: GCP project ID |
 | `instance_id` | `str` | Spanner only: Cloud Spanner instance ID |
+| `database_id` | `str \| None` | Spanner only: single database to target (optional — omit for multi-db mode) |
+| `databases` | `list[str] \| None` | Spanner only: explicit list of databases to extract (multi-db mode) |
 
 | Method | Returns | Description |
 |---|---|---|
@@ -1282,7 +1383,7 @@ helper = DDHelper(
 
 ---
 
-## 16. Troubleshooting
+## 17. Troubleshooting
 
 ### Connection Problems
 
