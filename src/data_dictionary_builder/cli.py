@@ -825,6 +825,20 @@ def features():
                   "Schema filter — repeat for multiple entries. "
                   'Examples: -s public  -s "prefix:stg_"  -s "regex:^raw_\\d+$"'
               ))
+@click.option("--exclude-column", "-x", default=None, multiple=True, metavar="PATTERN",
+              help=(
+                  "Column exclusion pattern — repeat for multiple entries. "
+                  "Columns matching any pattern are omitted from the output. "
+                  'Examples: -x "contains:peerdb"  -x "prefix:_dlt_"  -x "suffix:_tmp"'
+              ))
+@click.option("--exclude-table", "-T", default=None, multiple=True, metavar="PATTERN",
+              help=(
+                  "Table exclusion pattern — repeat for multiple entries. "
+                  "Tables matching any pattern are omitted from the output. "
+                  'Examples: -T "prefix:tmp_"  -T "contains:staging"  -T "suffix:_old"'
+              ))
+@click.option("--include-views", is_flag=True, default=False,
+              help="Also extract views in addition to base tables.")
 @click.option("--parallel",     "-w", default=8, show_default=True, metavar="N",
               help="Number of parallel extraction threads.")
 @click.option("--output-dir",   "-o", default="./models", show_default=True, metavar="DIR",
@@ -847,6 +861,7 @@ def features():
 @click.option("--report-dir",   default=None, metavar="DIR",
               help="Base directory for DDHelper (JSON report output). Defaults to output-dir parent.")
 def extract(db_type, host, port, database, user, password, service, schema_filter,
+            exclude_column, exclude_table, include_views,
             parallel, output_dir, fmt, combined, transport, secure,
             project_id, instance_id, report_dir):
     """
@@ -890,15 +905,20 @@ def extract(db_type, host, port, database, user, password, service, schema_filte
     cfg["user"]     = cfg.get("user")     or os.getenv("SOURCE_USER")
     cfg["password"] = cfg.get("password") or os.getenv("SOURCE_PASSWORD")
 
-    _sf = list(schema_filter) if schema_filter else None
+    _sf  = list(schema_filter)  if schema_filter  else None
+    _xcl = list(exclude_column) if exclude_column else None
+    _xtb = list(exclude_table)  if exclude_table  else None
 
     click.echo()
     click.echo(click.style("  Extracting metadata…", fg="cyan", bold=True))
-    _info(f"db_type  : {db_type}")
-    _info(f"host     : {host}:{port or 'default'}")
-    _info(f"database : {database or '(server mode — all databases)'}")
-    _info(f"filter   : {_sf or 'all schemas'}")
-    _info(f"workers  : {parallel}")
+    _info(f"db_type         : {db_type}")
+    _info(f"host            : {host}:{port or 'default'}")
+    _info(f"database        : {database or '(server mode — all databases)'}")
+    _info(f"schema filter   : {_sf or 'all schemas'}")
+    _info(f"exclude tables  : {_xtb or 'none'}")
+    _info(f"exclude columns : {_xcl or 'none'}")
+    _info(f"include views   : {include_views}")
+    _info(f"workers         : {parallel}")
     click.echo()
 
     timer = ExecutionTimer()
@@ -916,6 +936,9 @@ def extract(db_type, host, port, database, user, password, service, schema_filte
                 db_meta = ext.extract_all_schemas(
                     schema_filter=_sf,
                     parallel_workers=parallel,
+                    column_exclude=_xcl,
+                    table_exclude=_xtb,
+                    include_views=include_views,
                 )
 
         schema_count = len(db_meta.schemas)

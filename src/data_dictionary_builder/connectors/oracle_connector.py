@@ -138,6 +138,19 @@ class OracleConnector(BaseConnector):
         cursor.close()
         return tables
 
+    def get_views(self, schema_name: str) -> List[str]:
+        """Return all view names owned by *schema_name*."""
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT view_name FROM all_views "
+            "WHERE owner = :owner "
+            "ORDER BY view_name",
+            {"owner": schema_name.upper()},
+        )
+        views = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        return views
+
     # ── Column / key metadata ─────────────────────────────────────────────────
 
     def get_columns(self, schema_name: str, table_name: str) -> List[ColumnMetadata]:

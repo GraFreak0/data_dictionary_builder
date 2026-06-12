@@ -64,15 +64,28 @@ class SQLiteConnector(BaseConnector):
         """
         cursor = self.connection.cursor()
         cursor.execute(f"""
-            SELECT name 
-            FROM {schema_name}.sqlite_master 
-            WHERE type='table' 
+            SELECT name
+            FROM {schema_name}.sqlite_master
+            WHERE type='table'
             AND name NOT LIKE 'sqlite_%'
             ORDER BY name
         """)
         tables = [row[0] for row in cursor.fetchall()]
         cursor.close()
         return tables
+
+    def get_views(self, schema_name: str = 'main') -> List[str]:
+        """Return all view names in *schema_name*."""
+        cursor = self.connection.cursor()
+        cursor.execute(f"""
+            SELECT name
+            FROM {schema_name}.sqlite_master
+            WHERE type='view'
+            ORDER BY name
+        """)
+        views = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        return views
     
     def get_columns(self, schema_name: str, table_name: str) -> List[ColumnMetadata]:
         """

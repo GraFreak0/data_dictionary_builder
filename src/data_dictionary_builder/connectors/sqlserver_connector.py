@@ -135,6 +135,19 @@ class SQLServerConnector(BaseConnector):
         cursor.close()
         return tables
 
+    def get_views(self, schema_name: str) -> List[str]:
+        """Return all view names in *schema_name*."""
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
+            "WHERE TABLE_SCHEMA = %s AND TABLE_TYPE = 'VIEW' "
+            "ORDER BY TABLE_NAME",
+            (schema_name,),
+        )
+        views = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        return views
+
     # ── Column / key metadata ─────────────────────────────────────────────────
 
     def get_columns(self, schema_name: str, table_name: str) -> List[ColumnMetadata]:

@@ -376,6 +376,69 @@ def test_metadata_export(helper, src_db_meta):
     print("  ✓ Export OK")
 
 
+def test_extract_exclude_peerdb_columns(dirs):
+    """
+    Extracts ClickHouse metadata while excluding every column whose name
+    contains 'peerdb', then writes the result to a dedicated YAML file and
+    verifies that no excluded columns appear in the output.
+    """
+    section("14. Column Exclusion — exclude columns containing 'peerdb'")
+
+    EXCLUDE_PATTERNS = ["contains:peerdb"]
+
+    with MetadataExtractor(**SOURCE_CONFIG) as ext:
+        db_meta = ext.extract_all_schemas(
+            schema_filter=TARGET_SCHEMAS or None,
+            column_exclude=EXCLUDE_PATTERNS,
+        )
+
+    # Verify: no column in any table has 'peerdb' in its name
+    violations = []
+    for schema in db_meta.schemas:
+        for table in schema.tables:
+            for col in table.columns:
+                if "peerdb" in col.name.lower():
+                    violations.append(f"{schema.name}.{table.name}.{col.name}")
+
+    assert not violations, (
+        f"❌  {len(violations)} column(s) with 'peerdb' survived exclusion:\n"
+        + "\n".join(f"    • {v}" for v in violations)
+    )
+
+    # Count what was kept for the summary
+    total_cols = sum(len(t.columns) for s in db_meta.schemas for t in s.tables)
+    print(f"  Excluded pattern  : {EXCLUDE_PATTERNS}")
+    print(f"  Schemas extracted : {len(db_meta.schemas)}")
+    print(f"  Columns remaining : {total_cols}")
+
+    # Write to a dedicated YAML file
+    output_file = dirs["models"] / "clickhouse_no_peerdb.yml"
+    from data_dictionary_builder import YAMLGenerator
+    gen = YAMLGenerator(output_dir=str(dirs["models"]))
+    gen.generate_single_yaml(db_meta, filename="clickhouse_no_peerdb.yml")
+
+    assert output_file.exists(), f"❌  Expected YAML not created: {output_file}"
+    print(f"  YAML written to   : {output_file}  ({os.path.getsize(output_file):,} bytes)")
+
+    # Double-check the written YAML contains no 'peerdb' column names
+    import yaml as _yaml
+    with open(output_file, encoding="utf-8") as fh:
+        yaml_data = _yaml.safe_load(fh)
+
+    yaml_violations = []
+    for model in (yaml_data or {}).get("models", []):
+        for col in model.get("columns", []):
+            if "peerdb" in col.get("name", "").lower():
+                yaml_violations.append(f"{model['name']}.{col['name']}")
+
+    assert not yaml_violations, (
+        f"❌  {len(yaml_violations)} 'peerdb' column(s) found in written YAML:\n"
+        + "\n".join(f"    • {v}" for v in yaml_violations)
+    )
+
+    print("  ✓ No 'peerdb' columns in extracted metadata or written YAML")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
@@ -440,6 +503,9 @@ if __name__ == "__main__":
 
     with timer.task("13. Metadata export"):
         test_metadata_export(helper, src_db_meta)
+
+    with timer.task("14. Column exclusion — exclude peerdb columns"):
+        test_extract_exclude_peerdb_columns(dirs)
 
     timer.summary("ClickHouse Test Suite — Execution Summary")
 
