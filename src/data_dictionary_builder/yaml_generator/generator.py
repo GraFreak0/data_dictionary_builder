@@ -261,6 +261,7 @@ class YAMLGenerator:
         # Add metadata
         meta = {
             'schema': table.schema_name,
+            'source': table.source,
             'table_type': table.table_type,
         }
         if table.row_count is not None:

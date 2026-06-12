@@ -354,6 +354,8 @@ class MetadataExtractor:
             schema_name,
             include_views=include_views,
         )
+        for _t in schema_metadata.tables:
+            _t.source = connector.db_type
         logger.info(f"Extracted {len(schema_metadata.tables)} tables from schema: {schema_name}")
 
         if table_exclude:
@@ -391,6 +393,8 @@ class MetadataExtractor:
                     schema_name,
                     include_views=include_views,
                 )
+                for _t in schema_metadata.tables:
+                    _t.source = worker_connector.db_type
                 logger.info(
                     f"[worker] Done — {schema_name}: "
                     f"{len(schema_metadata.tables)} table(s)"
@@ -430,12 +434,14 @@ class MetadataExtractor:
                     for table_name in tables:
                         table_metadata = worker_connector.get_table_metadata(schema_name, table_name)
                         table_metadata.name = f"{schema_name}.{table_name}"
+                        table_metadata.source = worker_connector.db_type
                         db_schema.add_table(table_metadata)
                     if include_views:
                         for view_name in worker_connector.get_views(schema_name):
                             view_metadata = worker_connector.get_table_metadata(schema_name, view_name)
                             view_metadata.table_type = "VIEW"
                             view_metadata.name = f"{schema_name}.{view_name}"
+                            view_metadata.source = worker_connector.db_type
                             db_schema.add_table(view_metadata)
 
                 logger.info(

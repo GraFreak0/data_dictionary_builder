@@ -53,6 +53,7 @@ class TableMetadata:
     table_type: str = "BASE TABLE"  # BASE TABLE, VIEW, etc.
     columns: List[ColumnMetadata] = field(default_factory=list)
     description: Optional[str] = None
+    source: Optional[str] = None
     row_count: Optional[int] = None
     created_date: Optional[datetime] = None
     last_modified_date: Optional[datetime] = None
@@ -78,6 +79,7 @@ class TableMetadata:
             "table_type": self.table_type,
             "columns": [col.to_dict() for col in self.columns],
             "description": self.description,
+            "source": self.source,
             "row_count": self.row_count,
             "created_date": self.created_date.isoformat() if self.created_date else None,
             "last_modified_date": self.last_modified_date.isoformat() if self.last_modified_date else None,
@@ -196,6 +198,7 @@ class DatabaseMetadata:
                     schema_name=table_data["schema_name"],
                     table_type=table_data.get("table_type", "BASE TABLE"),
                     description=table_data.get("description"),
+                    source=table_data.get("source"),
                     row_count=table_data.get("row_count"),
                     primary_keys=table_data.get("primary_keys", []),
                     indexes=table_data.get("indexes", []),
